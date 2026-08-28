@@ -1,0 +1,159 @@
+/* Design tokens from docs/UI-UX-REQUIREMENTS.md. Keep this file the single
+   source of truth for tokens -- don't hardcode hex values elsewhere. */
+
+:root {
+  /* Colour */
+  --mist: #EBF1F4;
+  --paper: #FCFDFE;
+  --paper-sunk: #F4F8FA;
+  --ink: #0A2530;
+  --ink-2: #40606C;
+  --silt: #8CA3AD;
+  --line: #DCE6EB;
+  --indus: #0D6E80;
+  --indus-deep: #073B47;
+  --indus-wash: #DFF0F3;
+  --vermilion: #C62A22;
+  --vermilion-wash: #FBE6E4;
+  --marigold: #B86E0C;
+  --marigold-bright: #F5A524;
+  --marigold-wash: #FDF0DA;
+  --reed: #1E7A5A;
+  --reed-wash: #DFF2EA;
+
+  /* Radius */
+  --r-xs: 4px;
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 18px;
+  --r-xl: 24px;
+  --r-full: 999px;
+
+  /* Elevation */
+  --e-1: 0 1px 2px rgba(10,37,48,.06), 0 1px 1px rgba(10,37,48,.04);
+  --e-2: 0 2px 6px rgba(10,37,48,.07), 0 8px 20px rgba(10,37,48,.05);
+  --e-3: 0 4px 12px rgba(10,37,48,.08), 0 18px 44px rgba(10,37,48,.08);
+  --e-glass: 0 2px 8px rgba(10,37,48,.06), 0 20px 50px rgba(7,59,71,.10);
+
+  /* Motion */
+  --surge: cubic-bezier(0.22, 1.00, 0.36, 1.00);
+  --settle: cubic-bezier(0.40, 0.00, 0.20, 1.00);
+  --snap: cubic-bezier(0.30, 0.00, 0.10, 1.00);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--mist);
+  color: var(--ink);
+  font-family: "Public Sans", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr 420px;
+  grid-template-rows: 72px 1fr;
+  grid-template-areas:
+    "header header header"
+    "left   map     stream";
+  height: 100vh;
+}
+
+.header {
+  grid-area: header;
+  background: var(--paper);
+  box-shadow: var(--e-1);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 24px;
+  font-family: "Archivo", system-ui, sans-serif;
+}
+
+.rail-left {
+  grid-area: left;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.map-container {
+  grid-area: map;
+  position: relative;
+  margin: 16px;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+.rail-stream {
+  grid-area: stream;
+  background: var(--paper-sunk);
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Glass surfaces -- ONLY the filter bar, map legend, map controls, toasts.
+   Never the ticket table, drawer body, transcripts, or inputs
+   (docs/UI-UX-REQUIREMENTS.md section 4.3). */
+.glass {
+  background: rgba(252, 253, 254, 0.72);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(220, 230, 235, 0.75);
+  box-shadow: var(--e-glass);
+  border-radius: var(--r-l);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass {
+    background: rgba(252, 253, 254, 0.96);
+    box-shadow: var(--e-2);
+  }
+}
+
+.ticket-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  box-shadow: var(--e-1);
+  padding: 12px;
+  transition: box-shadow 160ms var(--snap), transform 160ms var(--snap);
+}
+
+.ticket-card:hover {
+  box-shadow: var(--e-2);
+  transform: translateY(-2px);
+}
+
+.urgency-critical  { border-left: 3px solid var(--vermilion); }
+.urgency-high      { border-left: 3px solid var(--marigold-bright); }
+.urgency-moderate  { border-left: 3px solid var(--indus); }
+.urgency-info      { border-left: 3px solid var(--silt); }
+
+.empty-state {
+  grid-area: stream;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  text-align: center;
+  padding: 32px;
+}
+
+/* TODO(FE-05/FE-06/FE-07): filter chips, TTT arc, waveform component,
+   detail drawer, motion/animation classes -- see
+   docs/UI-UX-REQUIREMENTS.md sections 6 and 7 for full specs. */

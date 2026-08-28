@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nidaa-AI — Dispatcher Console</title>
+
+  <!-- Fonts: self-host under dashboard/fonts/ before the offline demo (docs/UI-UX-REQUIREMENTS.md 3.1) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet from CDN, zero build step (docs/TRD.md section 7) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="header">
+      <strong>nidaa.ai</strong>
+      <!-- TODO(FE-08): TTT arc + median/p95/human-baseline/queue-depth, per
+           docs/UI-UX-REQUIREMENTS.md section 1.3 and section 5.1 -->
+      <span id="ttt-summary">Time to triage: —</span>
+      <span id="live-indicator" aria-live="polite">● live</span>
+    </header>
+
+    <aside class="rail-left">
+      <!-- TODO(FE-01/FE-05): queue counts, district totals, HXL export button -->
+      <h2>Queues</h2>
+      <nav id="queue-list"></nav>
+    </aside>
+
+    <main class="map-container">
+      <div id="map"></div>
+      <!-- TODO(FE-04/FE-05): glass filter chip bar + map legend float over the map -->
+    </main>
+
+    <section class="rail-stream" id="ticket-stream">
+      <div class="empty-state">
+        <p>Listening.</p>
+        <p>Messages sent to the triage number will appear here within seconds.</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="map.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

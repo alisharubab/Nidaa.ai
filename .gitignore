@@ -1,0 +1,27 @@
+# Environment
+.env
+
+# Node
+ingest/node_modules/
+ingest/auth_state/
+npm-debug.log*
+
+# Python
+core/__pycache__/
+core/**/__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Data / runtime
+nidaa.db
+nidaa.db-shm
+nidaa.db-wal
+storage/audio/*
+!storage/audio/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

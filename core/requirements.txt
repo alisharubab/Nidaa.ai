@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sse-starlette
+pydantic
+groq
+rapidfuzz
+python-dotenv
+python-multipart
