@@ -25,3 +25,7 @@ storage/audio/*
 Thumbs.db
 .vscode/
 .idea/
+# Local AI-assistant / IDE files
+qoder.md
+dashboard/qoder.md
+.qoder/
