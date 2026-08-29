@@ -26,10 +26,10 @@
 
 | ID | Task | Done | Owner / Notes |
 | :-- | :-- | :--: | :-- |
-| SETUP-01 | Groq account + API key + model IDs confirmed | [ ] | |
-| SETUP-02 | Burner SIM acquired for WhatsApp | [ ] | |
-| SETUP-03 | Node 20+, Python 3.11+, ffmpeg installed (both machines) | [ ] | |
-| SETUP-04 | Branch strategy + merge owner agreed | [ ] | |
+| SETUP-01 | Groq account + API key + model IDs confirmed | [x] | Ali, 2026-08-29 — key in .env, all 4 model IDs confirmed available on Groq console |
+| SETUP-02 | Burner SIM acquired for WhatsApp | [x] | Ali — using personal SIM with WhatsApp on main phone |
+| SETUP-03 | Node 20+, Python 3.11+, ffmpeg installed (both machines) | [x] | Ali — Node 20+, Python 3.12, ffmpeg 9.0.1 (via WinGet) |
+| SETUP-04 | Branch strategy + merge owner agreed | [x] | Ali — direct push to master, small commits, TRD §2/§3 changes flagged via addendum |
 
 ## Day 1 — Contracts and scaffolding
 
@@ -40,14 +40,15 @@
 | CORE-03 | `events.py`: append-event helper, same-transaction writes | [x] | Claude — verified via live SSE replay test |
 | CORE-04 | Public routes stubbed with fixture JSON matching TRD §3.3 | [x] | Claude — went further than the Day-1 stub: routes are real and DB-backed, not fixtures. Tickets stay empty until the pipeline (Day 2) or `/api/simulate` populates them |
 | CORE-05 | Groq smoke test (STT + LLM, hardcoded input) | [ ] | Script not written yet — needs your `GROQ_API_KEY` first |
-| ING-01 | Baileys socket bootstrap, pairing-code login | [ ] | Code not started — needs your burner-SIM pairing to test |
-| ING-02 | QR/pairing confirmed, inbound events logged | [ ] | Depends on ING-01 + your phone |
-| ING-03 | `POST /internal/ingest` stub calls against CORE-04 | [ ] | Can be tested with `curl` right now, no WhatsApp needed |
-| FE-01 | Static dashboard shell (header/rails/map container) | [x] | Already scaffolded, confirmed rendering |
-| FE-02 | Mock ticket list from static JSON fixture | [~] | Superseded — went straight to the real SSE client (FE-03) instead of a static fixture |
+| ING-01 | Baileys socket bootstrap, pairing-code login | [x] | Ali/Qoder, 2026-08-29 — full `startSock()` with `useMultiFileAuthState`, pairing-code login, reconnect on close, hard-stop on loggedOut, reply server on port 3000, jidMap for outbound routing. Tested: daemon boots, connects to WA socket, reply server listens. Pairing needs phone. Baileys logic now lives in `transports/whatsapp.js` (moved unchanged, one env-var flip away). |
+| ING-02 | QR/pairing confirmed, inbound events logged | [ ] | Needs Ali's phone with burner SIM — set `PAIRING_PHONE_NUMBER` in .env |
+| ING-03 | `POST /internal/ingest` stub calls against CORE-04 | [x] | Ali/Qoder — wired inside `handleMessage()`, posts full payload shape per TRD §3.1, also includes audio path/duration from downloadAndConvertToWav. Round-trips re-confirmed live via Telegram transport: text + audio rows in DB. |
+| FE-01 | Static dashboard shell (header/rails/map container) | [x] | Ali/Qoder, 2026-08-29 — full shell: brand mark + marigold dot in header, TTT metrics area, live indicator with pulsing dot, left rail with queue nav + district totals + HXL export button, glass filter bar over map, map legend, waveform-glyph empty state, presentation mode flag. Typography classes per UI-UX §3. |
+| FE-02 | Mock ticket list from static JSON fixture | [x] | Ali/Qoder — full ticket card per UI-UX §6.2: 3px urgency bar, urgency badge, district+P-code, 2-line-clamped items summary, waveform placeholder bars, state dot (confirmed/disputed/unconfirmed), Acknowledge button with verdict POST, aria-labels. Queue counts auto-update. Verified live: /api/simulate → SSE → card renders. |
 | DATA-01 | HDX COD-AB Pakistan gazetteer CSV built | [ ] | Needs a file download from HDX — ask before I do this (see summary) |
 | DATA-02 | `aliases.json` seeded for top 40 districts | [~] | 5 example districts seeded from the TRD; needs expansion to 40 |
 | DATA-03 | Human baseline stopwatch run recorded | [ ] | Needs a human with a stopwatch — see summary |
+| — | *(unscheduled)* Telegram dev/test transport in `ingest/transports/` (`INGEST_TRANSPORT` env var) | [x] | Ali/Qoder, 2026-08-29 — adapter pattern: transport-agnostic handler in index.js, Baileys in `transports/whatsapp.js` (unchanged), core/ + TRD contracts untouched (ARCHITECTURE §4 updated). Live-tested via @nidaa_ai_bot: text + 3.9s voice round-trips (16kHz mono WAV on disk + DB rows), consent notice exactly once, BAND→revoked+purged, post-BAND silent drop, photo ignored, /start filtered, /internal/reply synthetic delivery. |
 | — | **Sync point:** schema (TRD §2) + API contract (TRD §3) frozen | [ ] | One contract change made + documented (consent endpoints, TRD §3.1 addendum) — both of you should read and confirm it together |
 
 ## Day 2 — Vertical slice
@@ -59,8 +60,8 @@
 | CORE-08 | `pipeline/extract.py` (no fallback retry yet) | [ ] | |
 | CORE-09 | Stages wired synchronously, one hardcoded file end to end | [ ] | |
 | CORE-10 | Real `GET /api/stream` SSE (replaces stub) | [x] | Claude — tested with curl AND live in-browser, reconnect replay confirmed |
-| ING-04 | `media.js`: download + ffmpeg convert to 16kHz mono wav | [~] | `convertToWav` implemented; `downloadAndConvert` (the Baileys-specific half) still TODO |
-| ING-05 | Real `POST /internal/ingest` payload wired to real core routes | [ ] | Core side is ready and tested; Node side not wired yet |
+| ING-04 | `media.js`: download + ffmpeg convert to 16kHz mono wav | [x] | Ali/Qoder, 2026-08-29 — `convertToWav` was done by Person A; `downloadAndConvertToWav` now implemented in index.js: downloads via `downloadMediaMessage`, writes temp file, converts, cleans up, returns path + duration. Live-verified via Telegram: 3.9s ogg/opus → PCM 16kHz mono WAV. |
+| ING-05 | Real `POST /internal/ingest` payload wired to real core routes | [x] | Ali/Qoder — fully wired in `handleMessage()`, same as ING-03. Real payload with sender_hash, phone_tail, audio_path, modality, duration, text, received_at. |
 | FE-03 | Real SSE client rendering live `ticket.created` events | [x] | Claude — verified live in browser: ticket card + map pin both rendered from a real SSE event, screenshot confirmed |
 | FE-04 | Basic Leaflet map, one pin per ticket | [x] | Confirmed live — pin landed exactly on Dadu's coordinates |
 | DATA-04 | Alias table extended toward full top-40 | [ ] | |
@@ -75,10 +76,10 @@
 | CORE-13 | STT confidence gate (no_speech/logprob/compression/tokens) | [ ] | |
 | CORE-14 | Escalation path → `audio_unintelligible`, skip extraction | [ ] | |
 | CORE-15 | `queue_depth` on metrics SSE event, every 2s | [ ] | |
-| ING-06 | `consent.js`: consent ledger state machine, BAND/STOP | [x] | Claude — implemented against the new `/internal/consent/*` endpoints, tested standalone with `node -e` (no WhatsApp needed): first-contact notice, no-resend, BAND→revoked all confirmed |
-| ING-07 | `outbound.js`: single reply queue, jittered pacing | [ ] | |
-| ING-08 | `templates.js`: consent/readback/unintelligible/location copy | [ ] | |
-| ING-09 | `POST /internal/reply` handler wired | [ ] | |
+| ING-06 | `consent.js`: consent ledger state machine, BAND/STOP | [x] | Claude — implemented against the new `/internal/consent/*` endpoints, tested standalone with `node -e` (no WhatsApp needed): first-contact notice, no-resend, BAND→revoked all confirmed. Live-confirmed end-to-end via Telegram 2026-08-29: notice exactly once, BAND→revoked + raw_text/audio_path purged in DB, post-revoke silent drop. |
+| ING-07 | `outbound.js`: single reply queue, jittered pacing | [x] | Ali/Qoder, 2026-08-29 — live-confirmed: consent notice + reply-server message both delivered through the single jittered queue (1.5–3.0s); pump hardened so a failed send can no longer stall the queue. |
+| ING-08 | `templates.js`: consent/readback/unintelligible/location copy | [~] | consent_notice + audio_unintelligible live-delivered via Telegram (the latter via synthetic `/internal/reply`); readback + location_missing copy awaits the pipeline (Day 4) — location copy still has an in-code TODO. |
+| ING-09 | `POST /internal/reply` handler wired | [x] | Ali/Qoder, 2026-08-29 — reply server live on :3000; synthetic POST with a real sender_hash → template rendered + delivered to the Telegram chat. Core's pipeline will call it for real once readback lands (Day 4). |
 | FE-05 | Filter chips (urgency/district/time), client-side filtering | [ ] | |
 | FE-06 | Urgency colour ramp on pins/rows | [ ] | |
 | DATA-05 | Degraded-audio ladder script (`degrade_audio.py`) | [ ] | |
