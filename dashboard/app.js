@@ -27,15 +27,36 @@ function addTicket(ticket) {
   if (typeof renderTicketPin === "function") renderTicketPin(ticket);
 }
 
+function setLiveIndicator(isLive) {
+  const el = document.getElementById("live-indicator");
+  if (el) el.textContent = isLive ? "● live" : "○ reconnecting";
+}
+
+function updateTicket(ticket) {
+  const idx = tickets.findIndex((t) => t.id === ticket.id);
+  if (idx === -1) return addTicket(ticket);
+  tickets[idx] = ticket;
+  const stream = document.getElementById("ticket-stream");
+  const existing = stream.children[idx];
+  if (existing) existing.replaceWith(renderTicketCard(ticket));
+}
+
 /**
- * TODO(FE-03): connect to `${CORE_URL}/api/stream`, handle `ticket.created`
- * / `ticket.updated` / `metrics` events, and on reconnect resend
- * Last-Event-ID so the server replays missed events (docs/TRD.md 3.4).
+ * SSE client. The browser's native EventSource already resends
+ * Last-Event-ID on reconnect (docs/TRD.md 3.4) -- no manual bookkeeping
+ * needed here.
  */
 function connectStream() {
-  // const source = new EventSource(`${CORE_URL}/api/stream`);
-  // source.addEventListener("ticket.created", (e) => addTicket(JSON.parse(e.data)));
-  console.log("TODO(FE-03): SSE connection not yet implemented.");
+  const source = new EventSource(`${CORE_URL}/api/stream`);
+  source.addEventListener("open", () => setLiveIndicator(true));
+  source.addEventListener("error", () => setLiveIndicator(false));
+  source.addEventListener("ticket.created", (e) => addTicket(JSON.parse(e.data)));
+  source.addEventListener("ticket.updated", (e) => updateTicket(JSON.parse(e.data)));
+  source.addEventListener("message.status", (e) => {
+    // TODO(FE-11): surface preflight/unintelligible/failed message states
+    // in the UI per docs/UI-UX-REQUIREMENTS.md section 8.
+    console.log("message.status", JSON.parse(e.data));
+  });
 }
 
 /**

@@ -14,7 +14,6 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6",
     "dotenv": "^16",
-    "node-fetch": "^3",
     "qrcode-terminal": "^0.12"
   }
 }
