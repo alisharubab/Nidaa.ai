@@ -1,47 +1,190 @@
-// Socket bootstrap, pairing, and the inbound message handler.
-// docs/TRD.md section 6, docs/ARCHITECTURE.md section 4.
+// Entry point + transport-agnostic inbound handler.
+//
+// Transports live in ./transports/ (whatsapp.js, telegram.js). Each one
+// normalizes inbound messages into { endpointId, messageId, text, voice } and
+// calls onInbound(); each exposes sendText() + downloadVoice(). Everything
+// transport-independent — consent gate, control keywords, the
+// POST /internal/ingest contract, the jittered outbound queue, the
+// /internal/reply server — lives here, so switching INGEST_TRANSPORT never
+// changes pipeline behaviour.
+// docs/TRD.md section 6 (inbound handler), sections 3.1/3.2 (contracts).
 
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 const crypto = require("crypto");
+const http = require("http");
 
 const { checkConsent, handleControlKeyword } = require("./consent");
 const { OutboundQueue } = require("./outbound");
-const { downloadAndConvert } = require("./media");
 const { render } = require("./templates");
 
 const CORE_URL = process.env.CORE_URL || "http://127.0.0.1:8000";
-const SENDER_HASH_SALT = process.env.SENDER_HASH_SALT || "change-me";
+const INGEST_URL = process.env.INGEST_URL || "http://127.0.0.1:3000";
+const SENDER_HASH_SALT = process.env.SENDER_HASH_SALT || "nidaa-default-salt";
+const TRANSPORT = (process.env.INGEST_TRANSPORT || "whatsapp").toLowerCase();
 
-function senderHash(jid) {
-  return "sha256:" + crypto.createHash("sha256").update(jid + SENDER_HASH_SALT).digest("hex");
+function senderHash(endpointId) {
+  return "sha256:" + crypto
+    .createHash("sha256")
+    .update(endpointId + SENDER_HASH_SALT)
+    .digest("hex");
 }
 
-function phoneTail(jid) {
-  const digits = jid.replace(/\D/g, "");
+function phoneTail(endpointId) {
+  const digits = String(endpointId).replace(/\D/g, "");
   return digits.slice(-3);
 }
 
-/**
- * TODO(ING-01/ING-02):
- *   - makeWASocket({ auth: state, printQRInTerminal or pairing code })
- *   - persist auth_state/ via useMultiFileAuthState
- *   - reconnect on DisconnectReason.restartRequired, hard stop on loggedOut
- *
- * TODO(ING-03/ING-05): on `messages.upsert`:
- *   1. Ignore fromMe, groups, status broadcasts.
- *   2. Compute senderHash + phoneTail.
- *   3. checkConsent(...) -- send consent_notice via outboundQueue if pending.
- *   4. handleControlKeyword(...) for BAND/STOP/1/2 -- these never enter the
- *      triage pipeline (docs/TRD.md section 6, step 4).
- *   5. For audio: downloadAndConvert(msg) -> wav path.
- *   6. POST to `${CORE_URL}/internal/ingest` with the payload shape in
- *      docs/TRD.md section 3.1.
- */
-async function main() {
-  // eslint-disable-next-line no-console
-  console.log("Nidaa-AI ingestion daemon -- scaffold only, see TODOs above.");
+// --- Active transport + single outbound queue --------------------------------
+
+let activeTransport = null;
+let outboundQueue = null;
+
+// sender_hash -> endpointId (WhatsApp JID or Telegram chat id). Populated on
+// every inbound message so the /internal/reply server can route core-initiated
+// replies (readback, fallbacks) back to the right chat on the right transport.
+const endpointMap = new Map();
+
+async function sendViaTransport(endpointId, text) {
+  // The transport is assigned right after transport.start() resolves; the
+  // brief wait guards the startup race if a message lands first.
+  for (let i = 0; i < 20 && !activeTransport; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!activeTransport) throw new Error("no transport ready");
+  return activeTransport.sendText(endpointId, text);
 }
 
-main();
+// --- Shared inbound handler (TRD section 6 steps 2-6) ------------------------
+
+async function handleInbound({ endpointId, messageId, text, voice }) {
+  // Step 2: sender hash + phone tail
+  const sHash = senderHash(endpointId);
+  const tail = phoneTail(endpointId);
+  endpointMap.set(sHash, endpointId);
+
+  // Step 3: consent gate — first contact fires the notice exactly once
+  const consent = await checkConsent(sHash, tail);
+  if (consent.state === "revoked") return; // drop silently
+  if (consent.sendNotice) {
+    outboundQueue.enqueue(endpointId, render("consent_notice"));
+  }
+
+  // Step 4: control keywords (BAND/STOP); 1/2 route to readback in ING-10
+  if (text) {
+    const handled = await handleControlKeyword(sHash, text);
+    if (handled) return;
+  }
+
+  // Step 5: audio download + convert (transport-specific), else plain text
+  const modality = voice ? "audio" : "text";
+  let audioPath = null;
+  let audioDurationS = null;
+
+  if (voice) {
+    try {
+      const result = await activeTransport.downloadVoice(voice);
+      audioPath = result.path;
+      audioDurationS = result.duration;
+    } catch (err) {
+      console.error("[ingest] voice download/convert failed:", err.message);
+      return; // cannot process without the file
+    }
+  }
+
+  // Step 6: POST /internal/ingest (TRD section 3.1)
+  const payload = {
+    wa_message_id: messageId,
+    sender_hash: sHash,
+    phone_tail: tail,
+    modality,
+    audio_path: audioPath,
+    audio_duration_s: audioDurationS,
+    text: text || null,
+    received_at: new Date().toISOString(),
+  };
+
+  try {
+    const res = await fetch(`${CORE_URL}/internal/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      console.error(`[ingest] POST /internal/ingest failed: ${res.status} ${await res.text()}`);
+    } else {
+      const result = await res.json();
+      console.log(
+        `[ingest] ${modality} message ${messageId} -> message_id ${result.message_id}, queue_depth ${result.queue_depth}`
+      );
+    }
+  } catch (err) {
+    console.error(`[ingest] POST /internal/ingest error: ${err.message}`);
+  }
+}
+
+// --- /internal/reply server (TRD section 3.2) ---------------------------------
+// core/ tells us a template name + vars; we compose the text (templates.js)
+// and enqueue through the single jittered queue. Never a second send path.
+
+function startReplyServer() {
+  const server = http.createServer(async (req, res) => {
+    if (req.method !== "POST" || req.url !== "/internal/reply") {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", async () => {
+      try {
+        const { sender_hash, template, vars } = JSON.parse(body);
+        const endpointId = endpointMap.get(sender_hash);
+        if (!endpointId) {
+          console.error(`[reply] no endpoint mapped for ${sender_hash}`);
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: "endpoint not found" }));
+          return;
+        }
+        outboundQueue.enqueue(endpointId, render(template, vars || {}));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err) {
+        console.error("[reply] failed:", err.message);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+  });
+  const port = new URL(INGEST_URL).port || 3000;
+  server.listen(port, () => {
+    console.log(`[ingest] reply server listening on port ${port}`);
+  });
+}
+
+// --- Entry point --------------------------------------------------------------
+
+async function main() {
+  console.log(`[ingest] Nidaa-AI ingestion daemon starting (transport: ${TRANSPORT})`);
+  startReplyServer();
+  outboundQueue = new OutboundQueue(sendViaTransport);
+
+  let transportModule;
+  try {
+    transportModule = require(`./transports/${TRANSPORT}`);
+  } catch (err) {
+    console.error(
+      `[ingest] cannot load transport "${TRANSPORT}" (expected whatsapp|telegram): ${err.message}`
+    );
+    process.exit(1);
+  }
+
+  activeTransport = await transportModule.start({ onInbound: handleInbound });
+  console.log(`[ingest] transport "${activeTransport.name || TRANSPORT}" active`);
+}
+
+main().catch((err) => {
+  console.error("[ingest] Fatal:", err);
+  process.exit(1);
+});
 
 module.exports = { senderHash, phoneTail };
