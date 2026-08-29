@@ -93,13 +93,19 @@ Stage order is fixed and each stage can only make the ticket's status move forwa
 
 ```
 ingest/
-├── index.js         # socket bootstrap, pairing/QR, messages.upsert handler
+├── index.js         # entry point: transport-agnostic inbound handler (consent
+│                    # gate, control keywords, POST /internal/ingest) + reply server
+├── transports/
+│   ├── whatsapp.js  # Baileys socket + pairing code + voice download (primary)
+│   └── telegram.js  # Bot API long polling (dev/test transport — see note)
 ├── consent.js        # consent_ledger state machine: pending -> granted/revoked
 ├── outbound.js        # single reply queue, 1.5-3.0s jitter, global send cap
-├── media.js            # download + ffmpeg convert to 16kHz mono wav
+├── media.js            # ffmpeg convert to 16kHz mono wav (shared by all transports)
 ├── templates.js        # every outbound Roman Urdu string, one file (see TRD §6)
 └── auth_state/          # Baileys credentials — gitignored, never commit
 ```
+
+**Transport adapters (added Day 1).** `index.js` owns everything transport-independent; each module in `transports/` normalizes inbound messages into one shape (`endpointId`, `messageId`, `text`, `voice`) and exposes `sendText` + `downloadVoice`. `INGEST_TRANSPORT=whatsapp|telegram` in `.env` picks the transport. Telegram exists purely as a dev/test path — real end-to-end ingestion before the burner SIM is paired; WhatsApp remains the demo path, and `DEMO_MODE`'s simulator (TRD §10) is untouched. The `/internal/ingest` and `/internal/reply` contracts are unchanged: `wa_message_id` values are transport-scoped (`tg-<chat_id>-<message_id>` for Telegram, Baileys IDs for WhatsApp), which the TEXT UNIQUE column already accommodates.
 
 `templates.js` is deliberately the only file that composes user-facing text. `core/` never sends Urdu copy — it only tells `ingest/` which template name and variables to use (`POST /internal/reply`). This keeps a copy-edit a one-file change and keeps outbound pacing in one place, so nobody can accidentally add a second send path that bypasses the jitter/rate cap.
 

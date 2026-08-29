@@ -80,6 +80,8 @@ node index.js
 # scan the QR code / enter the pairing code on first run
 ```
 
+To test the ingestion path without a paired phone, set `INGEST_TRANSPORT=telegram` in `.env` (Bot API long polling; needs a bot token from @BotFather) — consent, voice download, and the `/internal/ingest` contract all run unchanged. `whatsapp` (Baileys) is the primary transport for the demo.
+
 **Dashboard:**
 No build step. Open `dashboard/index.html` directly in a browser, or serve the folder with any static file server:
 ```bash
