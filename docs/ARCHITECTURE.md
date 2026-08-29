@@ -56,7 +56,9 @@ If it's just the two of you: one person owns `core/` + `data/` + `tools/` (the A
 
 ### 2.1 Hard rule: no cross-imports
 
-`ingest/` never reads or writes `nidaa.db` directly. `dashboard/` never imports anything from `core/`. Every cross-module interaction is the HTTP contract in [TRD §3](TRD.md#3-api-contract), nothing else. This is what lets both of you develop against mocks before the other side's code exists (see §5).
+`ingest/` never reads or writes `nidaa.db` directly — including for consent state. `dashboard/` never imports anything from `core/`. Every cross-module interaction is the HTTP contract in [TRD §3](TRD.md#3-api-contract), nothing else. This is what lets both of you develop against mocks before the other side's code exists (see §5).
+
+This was a real gap in the original TRD (it said "check consent_ledger" without saying how, from a process that doesn't own the DB) — closed by adding `POST /internal/consent/check` and `POST /internal/consent/revoke` to the contract. See the addendum in [TRD §3.1](TRD.md#31-internal-node-daemon-to-python-core) if you're implementing either side of it.
 
 ---
 
@@ -68,7 +70,7 @@ core/
 ├── config.py           # env var loading, one place, imported everywhere else
 ├── db.py                # SQLite connection, WAL pragmas, migrations, DAO functions
 ├── events.py            # append-only event log + SSE replay query
-├── queue.py             # asyncio.Queue + worker pool + token buckets (STT, LLM)
+├── pipeline_queue.py    # asyncio.Queue + worker pool + token buckets (STT, LLM)
 ├── pipeline/
 │   ├── preflight.py      # Stage 0: ffprobe duration + RMS gate
 │   ├── stt.py             # Stage 1: Groq Whisper + confidence gate + escalation
@@ -151,7 +153,7 @@ Both choices are deliberate scope cuts for a 6-day build, documented here so nob
 
 * **SQLite in WAL mode**, not Postgres: zero server to provision, and WAL mode gives concurrent dashboard reads while pipeline workers write. Revisit only in Phase 3 (see PRD §16) when multi-instance scale actually matters.
 * **Dashboard has no bundler**: it must load from `file://` or a dead venue network. Do not introduce a build step, a framework, or an npm dependency graph on this module — that reintroduces the single failure mode the design explicitly avoids.
-* **Rate limiting lives in `core/queue.py` only**: both the STT and LLM token buckets are tuned below the documented free-tier ceilings (TRD §4.1). If you add a second place that calls Groq, it must acquire from the same bucket, or the whole point of the token bucket is defeated.
+* **Rate limiting lives in `core/pipeline_queue.py` only**: both the STT and LLM token buckets are tuned below the documented free-tier ceilings (TRD §4.1). If you add a second place that calls Groq, it must acquire from the same bucket, or the whole point of the token bucket is defeated.
 
 ---
 

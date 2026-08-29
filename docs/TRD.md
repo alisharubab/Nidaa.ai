@@ -26,7 +26,7 @@ nidaa-ai/
 │   │   ├── geocode.py            # offline gazetteer + rapidfuzz
 │   │   ├── urgency.py            # rule + model blended score
 │   │   └── dedupe.py             # near-duplicate flagging
-│   ├── queue.py                  # asyncio queue, worker pool, token bucket
+│   ├── pipeline_queue.py         # asyncio queue, worker pool, token bucket
 │   ├── db.py                     # SQLite WAL, migrations, DAO
 │   ├── events.py                 # monotonic event log for SSE replay
 │   ├── prompts/
@@ -74,6 +74,8 @@ DEMO_MODE=false
 ```
 
 > **Model note.** Groq has deprecated `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` on the free and developer tiers. Do not build on them. `openai/gpt-oss-120b` is the primary extraction model, with `qwen/qwen3.6-27b` as the fallback. Both support JSON structured output. Verify current model IDs on the Groq console the morning of Day 1, because this list moves.
+
+> **Filename note (post-v1.0.0, added during implementation).** The original layout named this file `core/queue.py`. That shadows Python's own standard-library `queue` module, which `anyio`/`asyncio` import internally — with `core/` on `sys.path` (true whenever you run `uvicorn` from inside that directory), every route breaks with `ImportError: cannot import name 'Queue' from 'queue'`, not just the ones that touch the pipeline queue. Renamed to `core/pipeline_queue.py` everywhere in this doc and the codebase.
 
 ---
 
@@ -188,6 +190,26 @@ Content-Type: application/json
 202 Accepted
 { "message_id": 481, "queued": true, "queue_depth": 3 }
 ```
+
+> **Addendum (post-v1.0.0, added during implementation).** The original contract specified `/internal/ingest` but never specified how the Node daemon checks or updates `consent_ledger` before deciding whether to call it — section 6 says "check consent_ledger" without saying by what mechanism, and `nidaa.db` is owned exclusively by `core/` (docs/ARCHITECTURE.md §2.1: no cross-process DB access). Two routes close that gap:
+
+```
+POST /internal/consent/check
+{ "sender_hash": "sha256:...", "phone_tail": "417" }
+
+200 OK
+{ "state": "granted" | "revoked", "send_notice": true }
+```
+Behaviour: if no ledger row exists yet, core creates one with `state=granted` (first contact is implied consent per PRD §3.1), sets `granted_at`/`notice_sent_at` to now and `purge_after` to now+72h, and returns `send_notice: true` — this is the one time the daemon should send the consent notice. If a row already exists, core returns its current state and `send_notice: false` always (the notice fires once per sender, never again). If `state: "revoked"`, the daemon drops the message silently and never calls `/internal/ingest` for it.
+
+```
+POST /internal/consent/revoke
+{ "sender_hash": "sha256:..." }
+
+200 OK
+{ "ok": true }
+```
+Behaviour: sets `state=revoked`, `revoked_at=now`, and purges that sender's stored audio files and transcript text from `messages` (PRD §3.1/§3.4). Called by the daemon when it sees `BAND` or `STOP` from a sender, before anything else in the message-handling flow (TRD §6, step 4).
 
 ### 3.2 Outbound callback (Python core to Node daemon)
 

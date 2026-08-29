@@ -70,7 +70,7 @@ Not in the original schedule but real: do this the night before so Day 1 isn't h
 
 | ID | Task | Track | Depends on |
 | :-- | :-- | :-- | :-- |
-| `CORE-11` | Implement `queue.py`: `asyncio.Queue` + `WORKER_CONCURRENCY` workers + two token buckets (STT 15 RPM, LLM 25 RPM) per TRD §4.1 | CORE | CORE-09 |
+| `CORE-11` | Implement `pipeline_queue.py`: `asyncio.Queue` + `WORKER_CONCURRENCY` workers + two token buckets (STT 15 RPM, LLM 25 RPM) per TRD §4.1 | CORE | CORE-09 |
 | `CORE-12` | Retry/backoff: exponential + jitter, max 3 attempts, halve bucket refill for 60s on 429 | CORE | CORE-11 |
 | `CORE-13` | STT confidence gate: `no_speech_prob`, `avg_logprob`, `compression_ratio`, min content tokens (TRD §4.3 constants) | CORE | CORE-07 |
 | `CORE-14` | Escalation path: retry once on `STT_MODEL_ESCALATION`, then `status=audio_unintelligible`, skip extraction, fire reply template | CORE | CORE-13 |
