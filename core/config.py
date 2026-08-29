@@ -2,9 +2,12 @@
 # Every other module in core/ imports from here rather than calling os.getenv directly.
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Always the repo-root .env, regardless of which directory `core/` is
+# launched from (README says `cp .env.example .env` at the repo root).
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
