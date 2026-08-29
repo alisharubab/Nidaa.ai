@@ -9,7 +9,7 @@ const MAX_DELAY_MS = 3000;
 
 class OutboundQueue {
   constructor(sendFn) {
-    this.sendFn = sendFn; // (jid, text) => Promise<void>, from the Baileys socket
+    this.sendFn = sendFn; // (endpointId, text) => Promise<void>, from the active transport
     this.queue = [];
     this.running = false;
   }
@@ -24,7 +24,13 @@ class OutboundQueue {
     this.running = true;
     while (this.queue.length > 0) {
       const { jid, text } = this.queue.shift();
-      await this.sendFn(jid, text);
+      try {
+        await this.sendFn(jid, text);
+      } catch (err) {
+        // A thrown send would kill the pump and silently stop every future
+        // reply (including the consent notice), so log and keep draining.
+        console.error("[outbound] send failed, message dropped:", err.message);
+      }
       const jitter = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
       await new Promise((resolve) => setTimeout(resolve, jitter));
     }
