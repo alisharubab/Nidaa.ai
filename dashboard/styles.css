@@ -35,22 +35,82 @@
   --e-3: 0 4px 12px rgba(10,37,48,.08), 0 18px 44px rgba(10,37,48,.08);
   --e-glass: 0 2px 8px rgba(10,37,48,.06), 0 20px 50px rgba(7,59,71,.10);
 
-  /* Motion */
+  /* Motion (docs/UI-UX-REQUIREMENTS.md section 7) */
   --surge: cubic-bezier(0.22, 1.00, 0.36, 1.00);
   --settle: cubic-bezier(0.40, 0.00, 0.20, 1.00);
   --snap: cubic-bezier(0.30, 0.00, 0.10, 1.00);
 }
 
-* { box-sizing: border-box; }
+/* --- Reset & base -------------------------------------------------------- */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  margin: 0;
   background: var(--mist);
   color: var(--ink);
   font-family: "Public Sans", system-ui, sans-serif;
   font-size: 14px;
   line-height: 20px;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* --- Typography (docs/UI-UX-REQUIREMENTS.md section 3) ------------------- */
+
+.t-display-xl {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 56px; line-height: 56px;
+  font-weight: 700; letter-spacing: -0.03em;
+}
+
+.t-display-l {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 34px; line-height: 38px;
+  font-weight: 600; letter-spacing: -0.025em;
+}
+
+.t-title {
+  font-family: "Public Sans", system-ui, sans-serif;
+  font-size: 20px; line-height: 26px;
+  font-weight: 600; letter-spacing: -0.015em;
+}
+
+.t-body-l {
+  font-size: 16px; line-height: 24px;
+}
+
+.t-body-s {
+  font-size: 13px; line-height: 18px;
+}
+
+.t-caption {
+  font-size: 12px; line-height: 16px;
+  letter-spacing: 0.01em; color: var(--ink-2);
+}
+
+.t-label {
+  font-size: 11px; line-height: 12px;
+  font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+
+.t-mono {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px; line-height: 18px;
+}
+
+.t-mono-sm {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; line-height: 14px;
+}
+
+/* Urdu script: Nastaliq with generous line-height (UI-UX §3.3) */
+.urdu-text {
+  font-family: "Noto Nastaliq Urdu", serif;
+  font-size: 18px; line-height: 2.1;
+  direction: rtl; text-align: right;
+}
+
+/* --- App shell grid (docs/UI-UX-REQUIREMENTS.md section 5.1) ------------- */
 
 .app-shell {
   display: grid;
@@ -62,6 +122,8 @@ body {
   height: 100vh;
 }
 
+/* --- Header, 72px -------------------------------------------------------- */
+
 .header {
   grid-area: header;
   background: var(--paper);
@@ -70,8 +132,71 @@ body {
   align-items: center;
   gap: 24px;
   padding: 0 24px;
-  font-family: "Archivo", system-ui, sans-serif;
+  z-index: 10;
 }
+
+.brand {
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+
+.brand-mark {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 22px; font-weight: 700;
+  letter-spacing: -0.02em; color: var(--indus-deep);
+}
+
+.brand-dot {
+  display: inline-block; width: 8px; height: 8px;
+  background: var(--marigold-bright); border-radius: 50%;
+  margin-left: -4px; vertical-align: super;
+}
+
+.header-ttt {
+  flex: 1; display: flex; align-items: baseline; gap: 16px;
+  min-width: 0;
+}
+
+.ttt-label-group {
+  display: flex; flex-direction: column; gap: 2px;
+}
+
+.ttt-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--silt);
+}
+
+.ttt-value {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px; color: var(--ink-2);
+}
+
+.ttt-value strong {
+  color: var(--indus-deep); font-weight: 500;
+}
+
+/* TODO(FE-08): replace with the thin 3px arc per UI-UX §1.3 */
+
+.live-indicator {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--ink-2);
+  flex-shrink: 0;
+}
+
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--reed);
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+.live-dot.offline { background: var(--vermilion); animation: none; }
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Left rail, 260px (docs/UI-UX-REQUIREMENTS.md §5.1) ----------------- */
 
 .rail-left {
   grid-area: left;
@@ -79,7 +204,64 @@ body {
   border-right: 1px solid var(--line);
   padding: 16px;
   overflow-y: auto;
+  display: flex; flex-direction: column; gap: 24px;
 }
+
+.rail-section-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--silt);
+  margin-bottom: 8px;
+}
+
+/* Queue nav items */
+.queue-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-radius: var(--r-m);
+  cursor: pointer; transition: background 120ms var(--snap);
+  border: none; background: none; width: 100%; text-align: left;
+  font-family: inherit; font-size: 14px; color: var(--ink);
+}
+
+.queue-item:hover { background: var(--paper-sunk); }
+.queue-item.active { background: var(--indus-wash); color: var(--indus-deep); font-weight: 600; }
+
+.queue-count {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px; color: var(--ink-2);
+}
+
+.queue-item.active .queue-count { color: var(--indus); }
+
+/* District totals (placeholder for Day 4 data) */
+.district-totals {
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+.district-row {
+  display: flex; justify-content: space-between;
+  padding: 4px 0; font-size: 13px; color: var(--ink-2);
+}
+
+.district-row span:last-child {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+/* HXL export button */
+.btn-export {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; padding: 10px 16px;
+  background: var(--indus); color: white;
+  border: none; border-radius: var(--r-m);
+  font-family: "Public Sans", sans-serif;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 120ms, transform 60ms;
+  margin-top: auto;
+}
+
+.btn-export:hover { background: var(--indus-deep); }
+.btn-export:active { transform: scale(0.98); }
+
+/* --- Map container (docs/UI-UX-REQUIREMENTS.md §5.1/6.4) --------------- */
 
 .map-container {
   grid-area: map;
@@ -95,6 +277,88 @@ body {
   height: 100%;
 }
 
+/* Desaturate tiles so urgency pins are the loudest thing (UI-UX §6.4) */
+.leaflet-tile-pane { filter: saturate(0.55) brightness(1.08) contrast(0.94); }
+
+/* Glass filter bar floating over the map (placeholder for FE-05 chips) */
+.filter-bar {
+  position: absolute; top: 16px; left: 16px; right: 16px;
+  z-index: 1000;
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 16px;
+  background: rgba(252, 253, 254, 0.72);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(220, 230, 235, 0.75);
+  box-shadow: var(--e-glass);
+  border-radius: var(--r-l);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .filter-bar {
+    background: rgba(252, 253, 254, 0.96);
+    box-shadow: var(--e-2);
+  }
+}
+
+/* Filter chips — minimal Day-1 placeholder; full logic in FE-05 */
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px; height: 32px;
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  font-size: 13px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; transition: all 120ms var(--snap);
+  user-select: none;
+}
+
+.filter-chip:hover {
+  border-color: rgba(13, 110, 128, 0.4); color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.filter-chip.selected {
+  background: var(--indus); color: white; border-color: var(--indus);
+}
+
+.filter-chip .chip-count {
+  font-family: "IBM Plex Mono", monospace; font-size: 11px;
+  background: var(--indus-wash); color: var(--indus-deep);
+  padding: 1px 6px; border-radius: var(--r-full);
+}
+
+.filter-chip.selected .chip-count {
+  background: rgba(255,255,255,0.25); color: white;
+}
+
+/* Map legend (glass card, bottom-left) */
+.map-legend {
+  position: absolute; bottom: 16px; left: 16px; z-index: 1000;
+  padding: 12px 16px;
+  background: rgba(252, 253, 254, 0.72);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(220, 230, 235, 0.75);
+  box-shadow: var(--e-glass);
+  border-radius: var(--r-l);
+}
+
+.legend-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--ink-2); padding: 2px 0;
+}
+
+.legend-pin {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+}
+
+.legend-pin.solid { background: var(--indus); }
+.legend-pin.hollow { background: transparent; border: 2px solid var(--indus); }
+.legend-pin.disputed { background: var(--vermilion); box-shadow: 0 0 0 2px var(--vermilion-wash); }
+.legend-pin.none { background: var(--silt); opacity: 0.5; }
+
+/* --- Right rail / ticket stream ------------------------------------------ */
+
 .rail-stream {
   grid-area: stream;
   background: var(--paper-sunk);
@@ -105,32 +369,28 @@ body {
   gap: 12px;
 }
 
-/* Glass surfaces -- ONLY the filter bar, map legend, map controls, toasts.
-   Never the ticket table, drawer body, transcripts, or inputs
-   (docs/UI-UX-REQUIREMENTS.md section 4.3). */
-.glass {
-  background: rgba(252, 253, 254, 0.72);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid rgba(220, 230, 235, 0.75);
-  box-shadow: var(--e-glass);
-  border-radius: var(--r-l);
+.stream-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 8px;
 }
 
-@supports not (backdrop-filter: blur(1px)) {
-  .glass {
-    background: rgba(252, 253, 254, 0.96);
-    box-shadow: var(--e-2);
-  }
+.stream-count {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px; color: var(--silt);
 }
+
+/* --- Ticket card (docs/UI-UX-REQUIREMENTS.md section 6.2) -------------- */
 
 .ticket-card {
+  position: relative;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   box-shadow: var(--e-1);
-  padding: 12px;
+  padding: 0;
+  cursor: pointer;
   transition: box-shadow 160ms var(--snap), transform 160ms var(--snap);
+  overflow: hidden;
 }
 
 .ticket-card:hover {
@@ -138,22 +398,169 @@ body {
   transform: translateY(-2px);
 }
 
-.urgency-critical  { border-left: 3px solid var(--vermilion); }
-.urgency-high      { border-left: 3px solid var(--marigold-bright); }
-.urgency-moderate  { border-left: 3px solid var(--indus); }
-.urgency-info      { border-left: 3px solid var(--silt); }
-
-.empty-state {
-  grid-area: stream;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-2);
-  text-align: center;
-  padding: 32px;
+.ticket-card:focus-visible {
+  outline: 2px solid var(--indus);
+  outline-offset: 2px;
 }
 
-/* TODO(FE-05/FE-06/FE-07): filter chips, TTT arc, waveform component,
-   detail drawer, motion/animation classes -- see
-   docs/UI-UX-REQUIREMENTS.md sections 6 and 7 for full specs. */
+.ticket-body {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 12px 12px 15px; /* 15px = 12px + 3px urgency bar */
+}
+
+.ticket-top {
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.ticket-urgency-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: var(--r-full);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.urgency-critical .ticket-urgency-badge { background: var(--vermilion-wash); color: var(--vermilion); }
+.urgency-high .ticket-urgency-badge { background: var(--marigold-wash); color: var(--marigold); }
+.urgency-moderate .ticket-urgency-badge { background: var(--indus-wash); color: var(--indus); }
+.urgency-info .ticket-urgency-badge { background: var(--paper-sunk); color: var(--silt); }
+
+.ticket-time {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; color: var(--silt);
+}
+
+.ticket-location {
+  display: flex; align-items: baseline; gap: 8px;
+}
+
+.ticket-district {
+  font-size: 16px; font-weight: 600; color: var(--ink);
+}
+
+.ticket-pcode {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; color: var(--silt);
+}
+
+.ticket-summary {
+  font-size: 13px; line-height: 18px; color: var(--ink-2);
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Waveform placeholder (full Confidence Waveform in FE-07/FE-09) */
+.ticket-waveform {
+  height: 24px; display: flex; align-items: center; gap: 2px;
+  padding-top: 4px;
+}
+
+.waveform-bar {
+  width: 3px; border-radius: var(--r-xs);
+  background: var(--indus);
+}
+
+.waveform-duration {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; color: var(--silt);
+  margin-left: auto;
+}
+
+/* Ticket footer: state + action */
+.ticket-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 4px;
+}
+
+.state-dot {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink-2);
+}
+
+.state-dot::before {
+  content: ""; display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 2px solid var(--silt); /* hollow = unconfirmed */
+}
+
+.state-dot.confirmed::before {
+  background: var(--reed); border-color: var(--reed);
+}
+
+.state-dot.disputed::before {
+  background: var(--vermilion); border-color: var(--vermilion);
+  box-shadow: 0 0 0 2px var(--vermilion-wash);
+}
+
+/* 3px urgency left bar */
+.ticket-card::before {
+  content: ""; position: absolute;
+  left: 0; top: 0; bottom: 0; width: 3px;
+}
+
+.urgency-critical::before { background: var(--vermilion); }
+.urgency-high::before { background: var(--marigold-bright); }
+.urgency-moderate::before { background: var(--indus); }
+.urgency-info::before { background: var(--silt); }
+
+/* Row tints for urgency (UI-UX §2.2) */
+.urgency-critical .ticket-body { background: var(--vermilion-wash); }
+.urgency-high .ticket-body { background: var(--marigold-wash); }
+
+/* Acknowledge button (UI-UX §6.8) */
+.btn-ack {
+  padding: 4px 12px; height: 28px;
+  background: var(--indus); color: white;
+  border: none; border-radius: var(--r-m);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background 120ms, transform 60ms;
+}
+
+.btn-ack:hover { background: var(--indus-deep); }
+.btn-ack:active { transform: scale(0.98); }
+.btn-ack:focus-visible { outline: 2px solid var(--indus); outline-offset: 2px; }
+
+/* --- Empty state (docs/UI-UX-REQUIREMENTS.md section 8) ---------------- */
+
+.empty-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  flex: 1; color: var(--ink-2); text-align: center;
+  padding: 32px; gap: 12px;
+}
+
+.empty-glyph {
+  width: 64px; height: 40px; display: flex;
+  align-items: flex-end; justify-content: center; gap: 3px;
+  color: var(--silt); margin-bottom: 8px;
+}
+
+.empty-glyph span {
+  display: block; width: 4px; border-radius: 2px;
+  background: var(--silt); opacity: 0.4;
+}
+
+.empty-title {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 22px; font-weight: 600; color: var(--ink-2);
+}
+
+.empty-sub {
+  font-size: 14px; color: var(--silt); max-width: 280px;
+}
+
+/* --- Reduced motion (docs/UI-UX-REQUIREMENTS.md §7.3) ----------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* --- Presentation mode (docs/UI-UX-REQUIREMENTS.md §10) ---------------- */
+
+body.present-mode {
+  font-size: 15.7px; /* +12% */
+}
+
+body.present-mode .hairline { border-width: 1.5px; }
