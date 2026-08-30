@@ -110,8 +110,9 @@ function addTicket(ticket) {
   tickets.unshift(ticket);
   const emptyState = document.getElementById("empty-state");
   if (emptyState) emptyState.remove();
-  if (typeof renderTicketPin === "function") renderTicketPin(ticket);
-  applyFilters();  // re-renders stream + pins respecting active filters
+  // applyFilters() calls refreshPins(visible) which redraws all pins;
+  // no need to call renderTicketPin(ticket) separately here.
+  applyFilters();
   updateCounts();
 }
 
@@ -135,7 +136,7 @@ function setLiveIndicator(isLive) {
 function updateCounts() {
   const total = tickets.length;
   const critical = tickets.filter((t) => t.urgency === "critical").length;
-  const unlocated = tickets.filter((t) => !t.latitude && !t.longitude).length;
+  const unlocated = tickets.filter((t) => t.latitude == null || t.longitude == null).length;
   const disputed = tickets.filter((t) => t.verification_status === "user_disputed").length;
 
   const setCount = (id, n) => {
@@ -181,10 +182,29 @@ function exportHXL() {
 
 function connectStream() {
   const source = new EventSource(`${CORE_URL}/api/stream`);
-  source.addEventListener("open", () => setLiveIndicator(true));
-  source.addEventListener("error", () => setLiveIndicator(false));
-  source.addEventListener("ticket.created", (e) => addTicket(JSON.parse(e.data)));
-  source.addEventListener("ticket.updated", (e) => updateTicket(JSON.parse(e.data)));
+  source.addEventListener("open",   () => setLiveIndicator(true));
+  source.addEventListener("error",  () => setLiveIndicator(false));
+  source.addEventListener("ticket.created",  (e) => addTicket(JSON.parse(e.data)));
+  source.addEventListener("ticket.updated",  (e) => updateTicket(JSON.parse(e.data)));
+  source.addEventListener("metrics", (e) => {
+    // Real-time queue_depth from CORE-15's 2s SSE broadcast — faster than
+    // the 5s pollMetrics() HTTP poll. Only update queue_depth here; the
+    // full metrics row (median/p95/baseline) still comes from pollMetrics().
+    try {
+      const m = JSON.parse(e.data);
+      if (m.queue_depth != null) {
+        const el = document.getElementById("ttt-summary");
+        if (el) {
+          // Patch just the queue badge without touching the rest of the line
+          el.querySelectorAll(".ttt-queue").forEach((n) => n.remove());
+          const span = document.createElement("span");
+          span.className = "ttt-queue";
+          span.innerHTML = ` · queue <strong>${m.queue_depth}</strong>`;
+          el.appendChild(span);
+        }
+      }
+    } catch { /* ignore malformed event */ }
+  });
   source.addEventListener("message.status", (e) => {
     // TODO(FE-11): surface preflight/unintelligible/failed message states
     // in the UI per docs/UI-UX-REQUIREMENTS.md section 8.
@@ -211,13 +231,21 @@ function pollMetrics() {
 
       const el = document.getElementById("ttt-summary");
       if (el) {
+        // Write median/p95/baseline; queue_depth is patched live by the
+        // SSE metrics event handler (connectStream) every 2s — don't
+        // overwrite it here, just preserve any existing .ttt-queue span.
+        const existingQueue = el.querySelector(".ttt-queue");
         el.innerHTML =
           `median <strong>${fmt(m.median_ttt_ms)}</strong>` +
           ` · p95 <strong>${fmt(m.p95_ttt_ms)}</strong>` +
-          ` · baseline <strong>${fmt(m.human_baseline_ms)}</strong>` +
-          (m.queue_depth != null
-            ? ` · queue <strong>${m.queue_depth}</strong>`
-            : "");
+          ` · baseline <strong>${fmt(m.human_baseline_ms)}</strong>`;
+        if (existingQueue) el.appendChild(existingQueue);
+        else if (m.queue_depth != null) {
+          const span = document.createElement("span");
+          span.className = "ttt-queue";
+          span.innerHTML = ` · queue <strong>${m.queue_depth}</strong>`;
+          el.appendChild(span);
+        }
       }
     } catch { /* silently ignore if core is down */ }
   }
@@ -239,7 +267,7 @@ function ticketMatchesFilter(ticket) {
   // Queue filter (left rail)
   if (activeQueue !== "all") {
     if (activeQueue === "critical"       && ticket.urgency !== "critical") return false;
-    if (activeQueue === "unlocated"      && (ticket.latitude != null && ticket.longitude != null)) return false;
+    if (activeQueue === "unlocated"      && !(ticket.latitude == null || ticket.longitude == null)) return false;
     if (activeQueue === "unintelligible" && ticket.error_code !== "STT_LOW_CONFIDENCE") return false;
     if (activeQueue === "disputed"       && ticket.verification_status !== "user_disputed") return false;
   }
