@@ -85,12 +85,13 @@ DEMO_MODE=false
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 PRAGMA busy_timeout=5000;
+PRAGMA foreign_keys=ON;
 
 CREATE TABLE IF NOT EXISTS consent_ledger (
     sender_hash        TEXT PRIMARY KEY,
     phone_tail         TEXT NOT NULL,             -- last 3 digits only
-    state              TEXT NOT NULL DEFAULT 'pending',
-                                                  -- pending|granted|revoked
+    state              TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (state IN ('pending','granted','revoked')),
     notice_sent_at     TEXT,
     granted_at         TEXT,
     revoked_at         TEXT,
@@ -100,51 +101,63 @@ CREATE TABLE IF NOT EXISTS consent_ledger (
 CREATE TABLE IF NOT EXISTS messages (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     wa_message_id      TEXT UNIQUE,
-    sender_hash        TEXT NOT NULL,
+    sender_hash        TEXT NOT NULL REFERENCES consent_ledger(sender_hash),
     phone_tail         TEXT,
-    modality           TEXT NOT NULL,             -- audio|text
+    modality           TEXT NOT NULL CHECK (modality IN ('audio','text')),
     audio_path         TEXT,
-    audio_duration_s   REAL,
+    audio_duration_s   REAL CHECK (audio_duration_s IS NULL OR audio_duration_s > 0),
     raw_text           TEXT,                      -- inbound text, or transcript
     detected_language  TEXT,
     stt_model_used     TEXT,
     stt_avg_logprob    REAL,
     stt_no_speech_prob REAL,
     stt_compression    REAL,
-    status             TEXT NOT NULL DEFAULT 'received',
-                       -- received|preflight_failed|transcribed
-                       -- |audio_unintelligible|extracted|failed
+    status             TEXT NOT NULL DEFAULT 'received'
+                       CHECK (status IN ('received','preflight_failed',
+                              'transcribed','audio_unintelligible',
+                              'extracted','failed')),
     error_code         TEXT,
     t_received         TEXT NOT NULL,
     t_transcribed      TEXT,
     t_extracted        TEXT,
     t_published        TEXT,
-    ttt_ms             INTEGER
+    ttt_ms             INTEGER CHECK (ttt_ms IS NULL OR ttt_ms >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS tickets (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id         INTEGER NOT NULL REFERENCES messages(id),
-    intent             TEXT,      -- resource_request|incident_report
-                                  -- |infrastructure_damage|non_actionable
-    urgency            TEXT,      -- critical|high|moderate|info
+    intent             TEXT CHECK (intent IS NULL OR intent IN
+                         ('resource_request','incident_report',
+                          'infrastructure_damage','non_actionable')),
+    urgency            TEXT CHECK (urgency IS NULL OR urgency IN
+                         ('critical','high','moderate','info')),
     loc_name           TEXT,      -- #loc+name
     adm2_name          TEXT,      -- #adm2+name  (district)
     adm1_name          TEXT,      -- #adm1+name  (province)
     pcode              TEXT,      -- #adm2+code
     latitude           REAL,      -- #geo+lat
     longitude          REAL,      -- #geo+lon
-    geocode_method     TEXT,      -- exact|fuzzy|alias|none
-    geocode_score      REAL,
-    items_json         TEXT,      -- [{"item":"...","qty":20,"unit":"family"}]
-    people_affected    INTEGER,
-    casualties         INTEGER,
-    missing_fields     TEXT,      -- JSON array
-    extraction_conf    REAL,
+    geocode_method     TEXT CHECK (geocode_method IS NULL OR geocode_method IN
+                         ('exact','fuzzy','alias','none')),
+    geocode_score      REAL CHECK (geocode_score IS NULL OR
+                         (geocode_score >= 0 AND geocode_score <= 1)),
+                       -- always 0-1 -- normalize fuzzy WRatio/100 -- see addendum
+    items_json         TEXT CHECK (items_json IS NULL OR json_valid(items_json)),
+                       -- [{"item":"...","qty":20,"unit":"family"}]
+    people_affected    INTEGER CHECK (people_affected IS NULL OR people_affected >= 0),
+    casualties         INTEGER CHECK (casualties IS NULL OR casualties >= 0),
+    missing_fields     TEXT CHECK (missing_fields IS NULL OR json_valid(missing_fields)),
+    extraction_conf    REAL CHECK (extraction_conf IS NULL OR
+                         (extraction_conf >= 0 AND extraction_conf <= 1)),
     reasoning_note     TEXT,
-    verification_status TEXT NOT NULL DEFAULT 'unconfirmed',
-                       -- unconfirmed|user_confirmed|user_disputed
-                       -- |dispatcher_verified|dispatcher_rejected
+    verification_status TEXT NOT NULL DEFAULT 'unconfirmed'
+                       CHECK (verification_status IN
+                              ('unconfirmed','user_confirmed','user_disputed')),
+                       -- sender-side only -- set by the 1/2 readback reply
+    dispatcher_verdict TEXT CHECK (dispatcher_verdict IS NULL OR
+                         dispatcher_verdict IN ('verified','rejected')),
+                       -- dispatcher-side only -- set by Acknowledge/Flag
     duplicate_of       INTEGER REFERENCES tickets(id),
     readback_sent_at   TEXT,
     created_at         TEXT NOT NULL
@@ -152,9 +165,10 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 CREATE TABLE IF NOT EXISTS events (
     seq                INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind               TEXT NOT NULL,   -- ticket.created|ticket.updated
-                                        -- |message.status|metrics
-    payload            TEXT NOT NULL,   -- JSON
+    kind               TEXT NOT NULL CHECK (kind IN
+                         ('ticket.created','ticket.updated',
+                          'message.status','metrics')),
+    payload            TEXT NOT NULL CHECK (json_valid(payload)),
     created_at         TEXT NOT NULL
 );
 
@@ -165,6 +179,14 @@ CREATE INDEX idx_messages_status ON messages(status);
 ```
 
 `events.seq` is the SSE cursor. Every state change writes exactly one event row inside the same transaction as the data change, which is what makes the reconnect replay correct rather than approximate.
+
+> **Integrity note (post-v1.0.0, added during implementation).** SQLite does not enforce foreign keys unless `PRAGMA foreign_keys=ON` is set on every connection — without it, every `REFERENCES` clause in this schema (including `tickets.message_id` and `tickets.duplicate_of`, which were already here) is documentation only, not an enforced constraint. The pragma is now set in `core/db.py` on both `init_db()` and `get_connection()`. Practical effect: `messages.sender_hash` must now match an existing `consent_ledger.sender_hash` row, or the insert fails with `sqlite3.IntegrityError` — this caught a real bug in `/api/simulate`'s synthetic test sender, which is why that route now calls `check_consent()` first.
+
+> **Verification-tracking note (post-v1.0.0, added during implementation).** v1.0.0 had one `verification_status` column carrying both the sender's `1`/`2` readback reply *and* the dispatcher's Acknowledge/Flag verdict, as five mutually-overwriting values. That's a real inconsistency between docs, not just an implementation nuance: UI-UX §2.3's pin-shape table only recognizes the sender-side values, and PRD §9 already talks about dispatcher verdicts writing to a distinct "evaluation table." Overwriting one with the other also silently destroys the data behind PRD §13's open question ("whether senders... engage with the `1`/`2` correction loop"). Split into two independent columns: `verification_status` (sender-side only, drives the map pin) and `dispatcher_verdict` (dispatcher-side only, drives the accuracy/evaluation numbers). `POST /api/tickets/{id}/verdict` (section 3.3) now writes `dispatcher_verdict`, not `verification_status`.
+
+> **Constraint-enforcement note (post-v1.0.0, added during implementation).** Every "enum-like" TEXT column in v1.0.0 (state/modality/status/intent/urgency/geocode_method/verification_status/dispatcher_verdict/kind) was documented in a comment but never actually validated by SQLite — a typo or a stray capital letter (e.g. `"Critical"` instead of `"critical"`) would silently break every `WHERE urgency = 'critical'` filter with no error anywhere. Added `CHECK` constraints enforcing every documented enum, plus range checks (`extraction_conf` 0-1, `people_affected`/`casualties` >= 0, `audio_duration_s` > 0, `ttt_ms` >= 0) and JSON-shape checks (`json_valid()`, SQLite 3.38+) on `items_json`, `missing_fields`, and `events.payload`.
+>
+> **`tickets.geocode_score` scale, resolved.** v1.0.0 gave this column two incompatible scales depending on match method — `alias`/`exact` matches got a literal `1.0`, `fuzzy` matches got a raw `rapidfuzz` `WRatio` (0-100). Chosen fix, for scalability rather than just hackathon correctness: **`geocode_score` is always 0-1**, regardless of method. `fuzzy` matches now store `WRatio / 100.0` (section 4.5 updated accordingly). The reason this matters beyond tidiness: a mixed scale is fine for one dashboard confidence bar today, but breaks the moment anything compares scores across methods — a future `?geocode_score>=0.9` filter, a sort-by-confidence view, or Phase 2's "full P-code gazetteer integration" adding yet another matching method with its own native scale. One normalized scale now means every future geocoding method just needs to map into 0-1 once, rather than every future *consumer* of this column needing to know which method produced each row before it can compare two scores.
 
 ---
 
@@ -310,6 +332,8 @@ resp = groq.chat.completions.create(
 )
 ```
 
+> **Fallback-model note (post-v1.0.0, confirmed via `CORE-05`'s smoke test).** This request shape works as-is for `LLM_MODEL_PRIMARY`. It does **not** work for `LLM_MODEL_FALLBACK` (`qwen/qwen3.6-27b`) — that model is a Groq "reasoning" model, and calling it with `response_format=json_object` and no `reasoning_format` set fails outright (`400 json_validate_failed`): it emits a `<think>...</think>` block before the answer, which breaks JSON parsing. The fallback call in `extract_with_fallback()` must additionally pass `reasoning_format="hidden"` and `reasoning_effort="none"`. `LLM_MODEL_PRIMARY` (GPT-OSS) does not support or need these — it already separates reasoning into its own response field by default. This is not a reason to swap the fallback model; the model itself extracts correctly (verified), it just needs two extra kwargs.
+
 Required output schema:
 
 ```json
@@ -356,7 +380,7 @@ Centroids come from the shapefile or, to stay dependency-light, from the gazette
 **Matching cascade:**
 1. **Alias lookup.** `data/aliases.json` maps hand-curated Roman Urdu variants for the top 40 flood-affected districts: `{"daadu":"Dadu","dadoo":"Dadu","ڈاڈو":"Dadu","sakkhar":"Sukkur","khairpoor":"Khairpur", ...}`. Method `alias`, score 1.0.
 2. **Exact normalised match** after lowercasing, stripping diacritics and collapsing whitespace. Method `exact`, score 1.0.
-3. **Fuzzy match** with `rapidfuzz.process.extractOne` using `WRatio`. Accept at score >= 85. Method `fuzzy`.
+3. **Fuzzy match** with `rapidfuzz.process.extractOne` using `WRatio`. Accept at raw `WRatio` >= 85 (0-100 scale). Method `fuzzy`. **Store `geocode_score` as `WRatio / 100.0`** — the column is always 0-1 regardless of method (post-v1.0.0 normalization, see the schema's constraint-enforcement addendum), so a dashboard confidence bar or a future `?geocode_score>=` filter behaves the same way no matter which method resolved the ticket.
 4. **No match.** `pcode`, `latitude` and `longitude` all stay `NULL`, `geocode_method = none`, ticket routes to the Unlocated Alerts queue, and the `location_missing` reply template fires asking for a WhatsApp live location pin.
 
 Optional Nominatim fallback for named non-administrative places (a village, a bridge, a school) at strictly 1 request per second with a descriptive `User-Agent`, disabled by default so the demo never depends on an external service.
