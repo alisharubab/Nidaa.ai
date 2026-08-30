@@ -4,7 +4,11 @@
 
 import csv
 import json
+import re
+import unicodedata
 from pathlib import Path
+
+from rapidfuzz import fuzz, process
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
@@ -13,8 +17,7 @@ FUZZY_ACCEPT_SCORE = 85  # raw rapidfuzz WRatio threshold, 0-100 scale
 
 def load_gazetteer(path: Path = DATA_DIR / "pak_gazetteer.csv") -> list[dict]:
     """Loads data/pak_gazetteer.csv (adm1_name,adm1_pcode,adm2_name,
-    adm2_pcode,adm3_name,adm3_pcode,lat,lon). TODO(CORE-18): call this once
-    at startup (main.py), not per-request."""
+    adm2_pcode,adm3_name,adm3_pcode,lat,lon) -- one row per tehsil."""
     with open(path, encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
@@ -23,24 +26,105 @@ def load_aliases(path: Path = DATA_DIR / "aliases.json") -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def geocode(location_raw: str, gazetteer: list[dict], aliases: dict) -> dict:
-    """Matching cascade, in order, first hit wins:
-      1. alias lookup (aliases.json)               -> method="alias",  score=1.0
-      2. exact normalised match (lowercase/strip)   -> method="exact",  score=1.0
-      3. rapidfuzz.process.extractOne, WRatio >= 85 -> method="fuzzy",  score=WRatio/100.0
-      4. no match                                    -> method="none", lat/lon/pcode = None
+def _normalize(s: str) -> str:
+    """Lowercase, strip diacritics/combining marks, collapse whitespace --
+    docs/TRD.md 4.5 step 2. Applied to both the candidate string and the
+    gazetteer/alias keys so "Dadu", " dadu ", and "DADU" all match the same
+    entry."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.lower().strip()
+    return re.sub(r"\s+", " ", s)
+
+
+def build_district_index(gazetteer: list[dict]) -> dict:
+    """The gazetteer has one row per tehsil (admin-3), but aliases.json and
+    the LLM's district_guess operate at district (admin-2) level. Groups
+    tehsil rows by district and averages their centroids as a practical
+    district-level point -- docs/TRD.md 4.5: "Centroids come from the
+    shapefile or, to stay dependency-light, from the gazetteer's own
+    coordinate columns where present." Keyed by normalized adm2_name. Call
+    once at startup, not per-request (rebuilding this per lookup would be
+    wasteful -- it's the same ~577 rows every time)."""
+    groups: dict[str, list[dict]] = {}
+    for row in gazetteer:
+        key = _normalize(row["adm2_name"])
+        groups.setdefault(key, []).append(row)
+
+    index = {}
+    for key, rows in groups.items():
+        lats = [float(r["lat"]) for r in rows]
+        lons = [float(r["lon"]) for r in rows]
+        index[key] = {
+            "adm2_name": rows[0]["adm2_name"],
+            "adm1_name": rows[0]["adm1_name"],
+            "pcode": rows[0]["adm2_pcode"],
+            "latitude": sum(lats) / len(lats),
+            "longitude": sum(lons) / len(lons),
+        }
+    return index
+
+
+def _no_match() -> dict:
+    return {
+        "adm2_name": None, "adm1_name": None, "pcode": None,
+        "latitude": None, "longitude": None,
+        "geocode_method": "none", "geocode_score": None,
+    }
+
+
+def _try_cascade(candidate: str | None, district_index: dict, aliases: dict) -> dict | None:
+    """One candidate string through alias -> exact -> fuzzy. Returns None
+    (not _no_match()) on failure so the caller can try a second candidate
+    before giving up -- see geocode()."""
+    normalized = _normalize(candidate) if candidate else ""
+    if not normalized:
+        return None
+
+    # 1. Alias lookup (hand-curated Roman Urdu / Urdu-script spelling
+    # variants -> canonical district name, data/aliases.json).
+    alias_target = aliases.get(normalized)
+    if alias_target is not None:
+        entry = district_index.get(_normalize(alias_target))
+        if entry is not None:
+            return {**entry, "geocode_method": "alias", "geocode_score": 1.0}
+
+    # 2. Exact normalised match against a real district name.
+    entry = district_index.get(normalized)
+    if entry is not None:
+        return {**entry, "geocode_method": "exact", "geocode_score": 1.0}
+
+    # 3. Fuzzy match, rapidfuzz WRatio >= FUZZY_ACCEPT_SCORE (0-100 scale).
+    match = process.extractOne(normalized, district_index.keys(), scorer=fuzz.WRatio)
+    if match is not None:
+        match_key, score, _ = match
+        if score >= FUZZY_ACCEPT_SCORE:
+            entry = district_index[match_key]
+            # geocode_score is ALWAYS 0-1 (docs/TRD.md section 2 constraint
+            # note) -- normalize the raw 0-100 WRatio before returning.
+            return {**entry, "geocode_method": "fuzzy", "geocode_score": score / 100.0}
+
+    return None
+
+
+def geocode(location_raw: str | None, district_guess: str | None,
+            district_index: dict, aliases: dict) -> dict:
+    """Tries `location_raw` first (it may directly name a district, e.g.
+    "Dadu"), then falls back to `district_guess` (the LLM's own coarser
+    guess) if the raw text didn't resolve -- location_raw can be a longer
+    phrase like "Dadu ke pass Johi" that the fuzzy matcher handles less
+    reliably than a cleaner district-only guess. Returns _no_match() (all
+    location fields NULL, method="none") if neither resolves -- that
+    routes the ticket to the Unlocated queue, never an invented coordinate
+    (hard rule 3, ../../CLAUDE.md).
 
     Returns {"adm2_name", "adm1_name", "pcode", "latitude", "longitude",
     "geocode_method", "geocode_score"}.
-
-    IMPORTANT: geocode_score is ALWAYS 0-1, never the raw rapidfuzz value.
-    `tickets.geocode_score` has a DB-level CHECK enforcing this (docs/TRD.md
-    section 2) -- storing a raw WRatio (0-100) here will raise
-    sqlite3.IntegrityError on insert, not silently misbehave. Divide by 100
-    before returning a fuzzy-match score.
-
-    TODO(CORE-18): implement the cascade. A "none" result routes the ticket
-    to the Unlocated Alerts queue and fires the location_missing reply
-    template — never invent coordinates.
     """
-    raise NotImplementedError
+    for candidate in (location_raw, district_guess):
+        result = _try_cascade(candidate, district_index, aliases)
+        if result is not None:
+            return result
+    return _no_match()
