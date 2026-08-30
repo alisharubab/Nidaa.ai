@@ -1,0 +1,32 @@
+[
+  {
+    "id": "msg1",
+    "modality": "text",
+    "text": "Dadu mein bees gharon ko khana aur saaf pani chahiye, halat ghair ha."
+  },
+  {
+    "id": "msg2",
+    "modality": "text",
+    "text": "Sukkur ke qareeb chhat gir gayi hai, do log zakhmi hain."
+  },
+  {
+    "id": "msg3",
+    "modality": "audio",
+    "audio_path": "data/baseline_sample/msg3.wav"
+  },
+  {
+    "id": "msg4",
+    "modality": "text",
+    "text": "Jacobabad mein dawai khatam ho gayi hai bacchon ke liye."
+  },
+  {
+    "id": "msg5",
+    "modality": "audio",
+    "audio_path": "data/baseline_sample/msg5.wav"
+  },
+  {
+    "id": "msg6",
+    "modality": "text",
+    "text": "Larkana aur Shikarpur dono jagah rasta band hai, log phanse huay hain."
+  }
+]

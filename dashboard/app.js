@@ -14,8 +14,12 @@ const URGENCY_LABELS = {
 const URGENCY_ORDER = ["critical", "high", "moderate", "info"];
 
 function verificationState(ticket) {
+  // verification_status (sender 1/2 reply) and dispatcher_verdict
+  // (Acknowledge/Flag) are two independent columns as of the schema fix
+  // in docs/TRD.md section 2 -- there is no "dispatcher_verified" value
+  // in verification_status any more. See PROGRESS.md CORE-02 notes.
   if (ticket.verification_status === "user_confirmed" ||
-      ticket.verification_status === "dispatcher_verified") return "confirmed";
+      ticket.dispatcher_verdict === "verified") return "confirmed";
   if (ticket.verification_status === "user_disputed") return "disputed";
   return "unconfirmed";
 }
