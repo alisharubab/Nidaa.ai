@@ -369,6 +369,20 @@ body {
   gap: 12px;
 }
 
+.status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ticket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
 .stream-header {
   display: flex; align-items: center; justify-content: space-between;
   padding-bottom: 8px;

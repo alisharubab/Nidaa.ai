@@ -10,7 +10,7 @@
 
 "use strict";
 
-const CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
+// CORE_URL is set once in tickets.js (loaded earlier)
 
 // ---------------------------------------------------------------------------
 // Fetch existing tickets on load (REST backfill before SSE catches up)
@@ -18,7 +18,7 @@ const CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
 
 async function loadExistingTickets() {
   try {
-    const res = await fetch(`${CORE_URL}/api/tickets`);
+    const res = await fetch(`${window.CORE_URL}/api/tickets`);
     if (!res.ok) return;
     const { tickets: existing } = await res.json();
     // existing is newest-first; add them oldest-first so the local array

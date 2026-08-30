@@ -7,17 +7,6 @@ const path = require("path");
 
 const STORAGE_DIR = path.join(__dirname, "..", "storage", "audio");
 
-/**
- * TODO(ING-04):
- *   1. downloadMediaMessage(msg, ...) from Baileys -> raw buffer.
- *   2. Write raw buffer to a temp file.
- *   3. ffmpeg -i <temp> -ar 16000 -ac 1 -c:a pcm_s16le <STORAGE_DIR>/<id>.wav
- *   4. Return the final wav path for the /internal/ingest payload.
- */
-async function downloadAndConvert(msg) {
-  throw new Error("not implemented");
-}
-
 function convertToWav(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const ff = spawn("ffmpeg", [
@@ -33,4 +22,4 @@ function convertToWav(inputPath, outputPath) {
   });
 }
 
-module.exports = { downloadAndConvert, convertToWav, STORAGE_DIR };
+module.exports = { convertToWav, STORAGE_DIR };

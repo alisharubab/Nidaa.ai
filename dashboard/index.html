@@ -103,14 +103,19 @@
         <span class="rail-section-title" style="margin:0">Ticket Stream</span>
         <span class="stream-count" id="stream-count">0 tickets</span>
       </div>
-      <div class="empty-state" id="empty-state">
-        <div class="empty-glyph">
-          <span style="height:8px"></span><span style="height:18px"></span>
-          <span style="height:28px"></span><span style="height:20px"></span>
-          <span style="height:12px"></span><span style="height:6px"></span>
+      <!-- FE-11: status cards live in their own container so they survive ticket filter rebuilds -->
+      <div class="status-stack" id="status-stack"></div>
+      <!-- Ticket cards are rendered here; cleared on filter changes -->
+      <div class="ticket-list" id="ticket-list">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-glyph">
+            <span style="height:8px"></span><span style="height:18px"></span>
+            <span style="height:28px"></span><span style="height:20px"></span>
+            <span style="height:12px"></span><span style="height:6px"></span>
+          </div>
+          <div class="empty-title">Listening.</div>
+          <div class="empty-sub">Messages sent to the triage number will appear here within seconds.</div>
         </div>
-        <div class="empty-title">Listening.</div>
-        <div class="empty-sub">Messages sent to the triage number will appear here within seconds.</div>
       </div>
     </section>
   </div>

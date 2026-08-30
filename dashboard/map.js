@@ -6,13 +6,19 @@ const PAKISTAN_FLOOD_BOUNDS = {
   zoom: 7,
 };
 
-// Urgency colour ramp (UI-UX §2.2 + token values from styles.css)
-const URGENCY_COLOURS = {
-  critical: { fill: "#C62A22", border: "#9B1F19" }, // --vermilion
-  high:     { fill: "#F5A524", border: "#B86E0C" }, // --marigold-bright / --marigold
-  moderate: { fill: "#0D6E80", border: "#073B47" }, // --indus / --indus-deep
-  info:     { fill: "#8CA3AD", border: "#60818D" }, // --silt
-};
+// Urgency colour ramp: read from CSS custom properties so map pins stay
+// in sync with the design tokens in styles.css (UI-UX §2.2).
+function _token(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return value ? value.trim() : null;
+}
+
+const URGENCY_COLOURS = () => ({
+  critical: { fill: _token("--vermilion"),      border: _token("--vermilion") },
+  high:     { fill: _token("--marigold-bright"), border: _token("--marigold") },
+  moderate: { fill: _token("--indus"),           border: _token("--indus-deep") },
+  info:     { fill: _token("--silt"),             border: _token("--silt") },
+});
 
 let map;
 let pinLayer;
@@ -44,7 +50,7 @@ function initMap() {
  */
 function pinOptions(ticket) {
   const urgency = ticket.urgency || "info";
-  const { fill, border } = URGENCY_COLOURS[urgency] || URGENCY_COLOURS.info;
+  const { fill, border } = URGENCY_COLOURS()[urgency] || URGENCY_COLOURS().info;
   const state =
     ticket.verification_status === "user_confirmed" || ticket.dispatcher_verdict === "verified"
       ? "confirmed"
@@ -58,7 +64,7 @@ function pinOptions(ticket) {
   if (state === "disputed") {
     // Double ring: outer ring in urgency border colour, inner ring via boxShadow
     // equivalent — simulated by thick weight + vermilion dashArray ring
-    return { radius: 9, color: "#C62A22", weight: 3, fillColor: fill, fillOpacity: 0.15 };
+    return { radius: 9, color: _token("--vermilion"), weight: 3, fillColor: fill, fillOpacity: 0.15 };
   }
   // unconfirmed: hollow ring
   return { radius: 9, color: border, weight: 2, fillColor: fill, fillOpacity: 0.15 };

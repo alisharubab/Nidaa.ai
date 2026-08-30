@@ -4,7 +4,7 @@
 
 "use strict";
 
-const CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
+// CORE_URL is set once in tickets.js (loaded earlier)
 
 let _drawerTicket = null;
 
@@ -64,7 +64,7 @@ function _renderDrawerContent(ticket) {
     ? `<div class="drawer-section">
         <div class="drawer-section-label">Audio</div>
         <audio controls
-          src="${CORE_URL}/audio/${encodeURIComponent(audioPath.split(/[\/\\]/).pop())}"
+          src="${window.CORE_URL}/audio/${encodeURIComponent(audioPath.split(/[\/\\]/).pop())}"
           class="drawer-audio"></audio>
         ${cached.audio_duration_s
           ? `<span class="drawer-audio-dur t-mono">${Math.round(cached.audio_duration_s)}s voice note</span>`

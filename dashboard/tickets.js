@@ -4,6 +4,9 @@
 
 "use strict";
 
+// Global config (loaded before other scripts)
+window.CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
+
 // ---------------------------------------------------------------------------
 // Data store
 // ---------------------------------------------------------------------------
@@ -126,7 +129,17 @@ function renderTicketCard(ticket) {
 
 function addTicket(ticket) {
   tickets.unshift(ticket);
-  document.getElementById("empty-state")?.remove();
+  document.querySelector("#ticket-list #empty-state")?.remove();
+  // Cache any message metadata that happens to be on the ticket object
+  // (Person A may add modality/audio_path/raw_text to the join later).
+  if (ticket.message_id && (ticket.modality || ticket.audio_path || ticket.raw_text || ticket.audio_duration_s)) {
+    messageCache.set(ticket.message_id, {
+      modality:          ticket.modality,
+      audio_path:        ticket.audio_path,
+      audio_duration_s:  ticket.audio_duration_s,
+      raw_text:          ticket.raw_text,
+    });
+  }
   applyFilters();
   updateCounts();
 }
@@ -137,7 +150,7 @@ function updateTicket(ticket) {
   tickets[idx] = ticket;
   applyFilters();
   updateCounts();
-  if (typeof updatePin    === "function") updatePin(ticket);
+  // applyFilters() already calls refreshPins(visible); updatePin is redundant
   if (typeof refreshDrawer === "function") refreshDrawer(ticket);
 }
 
@@ -175,8 +188,7 @@ function updateCounts() {
 
 async function acknowledgeTicket(id) {
   try {
-    const CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
-    const res = await fetch(`${CORE_URL}/api/tickets/${id}/verdict`, {
+    const res = await fetch(`${window.CORE_URL}/api/tickets/${id}/verdict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ verdict: "verified" }),
@@ -187,11 +199,11 @@ async function acknowledgeTicket(id) {
 
 async function flagTicket(id) {
   try {
-    const CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
-    const res = await fetch(`${CORE_URL}/api/tickets/${id}/verdict`, {
+    // TRD §3.3 / DB CHECK: dispatcher_verdict must be 'verified' or 'rejected'
+    const res = await fetch(`${window.CORE_URL}/api/tickets/${id}/verdict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ verdict: "disputed" }),
+      body: JSON.stringify({ verdict: "rejected" }),
     });
     if (res.ok) console.log(`[tickets] ticket ${id} flagged`);
   } catch (err) { console.error("[tickets] flag failed:", err); }
@@ -199,6 +211,5 @@ async function flagTicket(id) {
 
 // HXL export
 function exportHXL() {
-  const CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
-  window.open(`${CORE_URL}/api/export/hxl.csv`, "_blank");
+  window.open(`${window.CORE_URL}/api/export/hxl.csv`, "_blank");
 }

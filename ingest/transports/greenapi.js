@@ -153,19 +153,27 @@ async function start({ onInbound }) {
 
         const receiptId = notif.receiptId;
 
-        // Parse and dispatch — errors in the handler must not block DeleteNotification
-        try {
-          const msg = parseNotification(notif);
-          if (msg) await onInbound(msg);
-        } catch (err) {
-          console.error("[greenapi] handler error:", err.message);
-        }
-
-        // Always delete to advance the queue, even if the handler failed
+        // Delete the receipt FIRST so Green API's queue advances immediately.
+        // The handler (audio download / ffmpeg / core POST) can take seconds;
+        // we must not hold the poll loop behind it.
         try {
           await gaDelete(receiptId);
         } catch (err) {
           console.error("[greenapi] deleteNotification failed:", err.message);
+        }
+
+        // Parse and dispatch in the background — handler errors must not crash
+        // the poll loop. Catch on the promise so the unhandled rejection does
+        // not terminate the Node process.
+        try {
+          const msg = parseNotification(notif);
+          if (msg) {
+            onInbound(msg).catch((err) => {
+              console.error("[greenapi] async handler error:", err.message);
+            });
+          }
+        } catch (err) {
+          console.error("[greenapi] parse error:", err.message);
         }
 
       } catch (err) {

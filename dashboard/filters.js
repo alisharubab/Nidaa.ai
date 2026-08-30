@@ -27,12 +27,10 @@ function ticketMatchesFilter(ticket) {
 // ---------------------------------------------------------------------------
 
 function applyFilters() {
-  const stream = document.getElementById("ticket-stream");
-  const header = stream?.querySelector(".stream-header");
-  if (!stream) return;
+  const list = document.getElementById("ticket-list");
+  if (!list) return;
 
-  stream.innerHTML = "";
-  if (header) stream.appendChild(header);
+  list.innerHTML = "";
 
   const visible = tickets.filter(ticketMatchesFilter);
 
@@ -40,12 +38,13 @@ function applyFilters() {
     const empty = document.createElement("div");
     empty.className = "filter-empty";
     empty.textContent = "No tickets match this filter.";
-    stream.appendChild(empty);
+    list.appendChild(empty);
   } else {
-    visible.forEach((t) => stream.appendChild(renderTicketCard(t)));
+    visible.forEach((t) => list.appendChild(renderTicketCard(t)));
   }
 
   if (typeof refreshPins === "function") refreshPins(visible);
+  if (typeof refreshStatusCards === "function") refreshStatusCards(activeQueue);
   updateChipCounts();
 }
 

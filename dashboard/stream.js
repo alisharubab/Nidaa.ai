@@ -3,14 +3,14 @@
 
 "use strict";
 
-const _CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
+// CORE_URL is set once in tickets.js (loaded earlier)
 
 // ---------------------------------------------------------------------------
 // SSE stream (TRD §3.3 / §3.4)
 // ---------------------------------------------------------------------------
 
 function connectStream() {
-  const source = new EventSource(`${_CORE_URL}/api/stream`);
+  const source = new EventSource(`${window.CORE_URL}/api/stream`);
 
   source.addEventListener("open",  () => setLiveIndicator(true));
   source.addEventListener("error", () => setLiveIndicator(false));
@@ -52,7 +52,7 @@ function connectStream() {
 function pollMetrics() {
   async function fetch_and_render() {
     try {
-      const res = await fetch(`${_CORE_URL}/api/metrics`);
+      const res = await fetch(`${window.CORE_URL}/api/metrics`);
       if (!res.ok) return;
       const m = await res.json();
 
@@ -89,9 +89,8 @@ let _unintelligibleCount = 0;
 const _statusCards = new Map();
 
 function addStatusCard(data) {
-  const stream = document.getElementById("ticket-stream");
-  if (!stream) return;
-  document.getElementById("empty-state")?.remove();
+  const stack = document.getElementById("status-stack");
+  if (!stack) return;
 
   // Track unintelligible count for the queue nav badge
   if (data.status === "audio_unintelligible") {
@@ -104,6 +103,7 @@ function addStatusCard(data) {
   card.className = "status-card";
   const key = data.message_id || data.sender_hash || Date.now();
   card.dataset.msgId = key;
+  card.dataset.status = data.status || "";
 
   const isUnintelligible = data.status === "audio_unintelligible";
   card.innerHTML = `
@@ -120,8 +120,18 @@ function addStatusCard(data) {
     </div>
   `;
 
-  const header = stream.querySelector(".stream-header");
-  if (header?.nextSibling) stream.insertBefore(card, header.nextSibling);
-  else stream.appendChild(card);
+  stack.insertBefore(card, stack.firstChild);
   _statusCards.set(key, card);
+}
+
+// Called by filters.js after any filter change so status cards hide/show
+// correctly (e.g. 'Unhearable' queue should only show audio_unintelligible).
+function refreshStatusCards(activeQueue) {
+  for (const card of _statusCards.values()) {
+    const isUnintelligible = card.dataset.status === "audio_unintelligible";
+    const show = activeQueue === "all" ||
+                 (activeQueue === "unintelligible" && isUnintelligible) ||
+                 (activeQueue === "disputed" && !isUnintelligible);
+    card.style.display = show ? "" : "none";
+  }
 }
