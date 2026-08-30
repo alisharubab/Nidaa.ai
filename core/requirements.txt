@@ -6,3 +6,7 @@ groq
 rapidfuzz
 python-dotenv
 python-multipart
+
+# dev/build tools, not runtime deps of main.py
+openpyxl   # tools/build_gazetteer.py (DATA-01)
+edge-tts   # smoke_test_groq.py, tools/make_test_audio.py (free synthetic Urdu TTS)
