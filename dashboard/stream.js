@@ -1,0 +1,127 @@
+// stream.js — SSE client, TTT metrics polling, status cards (FE-11).
+// Depends on: tickets.js, drawer.js, filters.js
+
+"use strict";
+
+const _CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
+
+// ---------------------------------------------------------------------------
+// SSE stream (TRD §3.3 / §3.4)
+// ---------------------------------------------------------------------------
+
+function connectStream() {
+  const source = new EventSource(`${_CORE_URL}/api/stream`);
+
+  source.addEventListener("open",  () => setLiveIndicator(true));
+  source.addEventListener("error", () => setLiveIndicator(false));
+
+  source.addEventListener("ticket.created", (e) => {
+    try { addTicket(JSON.parse(e.data)); } catch { /* ignore */ }
+  });
+
+  source.addEventListener("ticket.updated", (e) => {
+    try { updateTicket(JSON.parse(e.data)); } catch { /* ignore */ }
+  });
+
+  // CORE-15: real-time queue_depth every 2s — patch just the queue badge,
+  // leaving median/p95/baseline written by pollMetrics().
+  source.addEventListener("metrics", (e) => {
+    try {
+      const m = JSON.parse(e.data);
+      if (m.queue_depth == null) return;
+      const el = document.getElementById("ttt-summary");
+      if (!el) return;
+      el.querySelectorAll(".ttt-queue").forEach((n) => n.remove());
+      const span = document.createElement("span");
+      span.className = "ttt-queue";
+      span.innerHTML = ` · queue <strong>${m.queue_depth}</strong>`;
+      el.appendChild(span);
+    } catch { /* ignore */ }
+  });
+
+  // FE-11: audio_unintelligible / preflight_failed surface as status cards
+  source.addEventListener("message.status", (e) => {
+    try { addStatusCard(JSON.parse(e.data)); } catch { /* ignore */ }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// TTT header polling (FE-08) — 5s cycle for median/p95/baseline
+// ---------------------------------------------------------------------------
+
+function pollMetrics() {
+  async function fetch_and_render() {
+    try {
+      const res = await fetch(`${_CORE_URL}/api/metrics`);
+      if (!res.ok) return;
+      const m = await res.json();
+
+      const fmt = (ms) =>
+        ms == null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+
+      const el = document.getElementById("ttt-summary");
+      if (!el) return;
+
+      // Preserve the .ttt-queue span written by the SSE handler above
+      const existingQueue = el.querySelector(".ttt-queue");
+      el.innerHTML =
+        `median <strong>${fmt(m.median_ttt_ms)}</strong>` +
+        ` · p95 <strong>${fmt(m.p95_ttt_ms)}</strong>` +
+        ` · baseline <strong>${fmt(m.human_baseline_ms)}</strong>`;
+      if (existingQueue) el.appendChild(existingQueue);
+      else if (m.queue_depth != null) {
+        const span = document.createElement("span");
+        span.className = "ttt-queue";
+        span.innerHTML = ` · queue <strong>${m.queue_depth}</strong>`;
+        el.appendChild(span);
+      }
+    } catch { /* silently ignore if core is down */ }
+  }
+  fetch_and_render();
+  setInterval(fetch_and_render, 5000);
+}
+
+// ---------------------------------------------------------------------------
+// FE-11: message.status cards
+// ---------------------------------------------------------------------------
+
+let _unintelligibleCount = 0;
+const _statusCards = new Map();
+
+function addStatusCard(data) {
+  const stream = document.getElementById("ticket-stream");
+  if (!stream) return;
+  document.getElementById("empty-state")?.remove();
+
+  // Track unintelligible count for the queue nav badge
+  if (data.status === "audio_unintelligible") {
+    _unintelligibleCount++;
+    const el = document.getElementById("count-unintelligible");
+    if (el) el.textContent = _unintelligibleCount;
+  }
+
+  const card = document.createElement("div");
+  card.className = "status-card";
+  const key = data.message_id || data.sender_hash || Date.now();
+  card.dataset.msgId = key;
+
+  const isUnintelligible = data.status === "audio_unintelligible";
+  card.innerHTML = `
+    <div class="status-card-icon">${isUnintelligible ? "🔇" : "⚠️"}</div>
+    <div class="status-card-body">
+      <div class="status-card-title">
+        ${isUnintelligible ? "Audio Unintelligible" : "Message Failed"}
+      </div>
+      <div class="status-card-sub">
+        ${isUnintelligible
+          ? "Nidaa could not hear this. Listen yourself."
+          : data.reason || data.status || "Processing failed"}
+      </div>
+    </div>
+  `;
+
+  const header = stream.querySelector(".stream-header");
+  if (header?.nextSibling) stream.insertBefore(card, header.nextSibling);
+  else stream.appendChild(card);
+  _statusCards.set(key, card);
+}
