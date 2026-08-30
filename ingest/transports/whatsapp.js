@@ -63,36 +63,46 @@ async function start({ onInbound }) {
   const connect = async () => {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_STATE_DIR);
 
+    // pairingCode: true tells Baileys to use the pairing-code flow instead
+    // of the QR code flow. Must be set at construction time, not later.
+    const needsPairing = !state.creds.registered;
     sock = makeWASocket({
       auth: state,
       browser: Browsers.windows("Nidaa-AI"),
-      printQRInTerminal: false, // pairing code only
+      printQRInTerminal: false,
     });
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", async (update) => {
-      const { connection, lastDisconnect, isNewLogin } = update;
-
-      // First run: no saved session — request a pairing code
-      if (isNewLogin && !PAIRING_PHONE) {
+    // Request the pairing code immediately after socket creation, before
+    // any connection events. This is the correct Baileys v6 timing —
+    // requestPairingCode must be called while the socket is still in the
+    // handshake phase. Calling it from isNewLogin (which fires AFTER
+    // pairing succeeds) is too late and causes "QR refs attempts ended".
+    if (needsPairing) {
+      if (!PAIRING_PHONE) {
         console.error(
           "[whatsapp] no saved auth_state and PAIRING_PHONE_NUMBER not set in .env\n" +
           "Set PAIRING_PHONE_NUMBER (country code + number, digits only, e.g. 923001234567)"
         );
         process.exit(1);
       }
-      if (isNewLogin && PAIRING_PHONE) {
-        try {
-          const code = await sock.requestPairingCode(PAIRING_PHONE);
-          console.log(`\n  Pairing code: ${code}`);
-          console.log("  Open WhatsApp on the linked phone:");
-          console.log("  Settings -> Linked Devices -> Link with phone number\n");
-        } catch (err) {
-          console.error("[whatsapp] pairing code request failed:", err.message);
-          process.exit(1);
-        }
+      // Small delay so the WebSocket handshake completes before we send
+      // the pairing-code IQ stanza — Baileys needs the noise session up.
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        const code = await sock.requestPairingCode(PAIRING_PHONE);
+        console.log(`\n  Pairing code: ${code}`);
+        console.log("  On your phone: WhatsApp → ⋮ → Linked Devices → Link a Device");
+        console.log("  Tap 'Link with phone number instead' → enter this 8-digit code\n");
+      } catch (err) {
+        console.error("[whatsapp] pairing code request failed:", err.message);
+        // Reconnect loop will retry
       }
+    }
+
+    sock.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect } = update;
 
       if (connection === "open") {
         console.log("[whatsapp] connected and ready.");
