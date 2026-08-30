@@ -41,6 +41,19 @@ async function ga(method, endpoint, body = null) {
   return JSON.parse(text);
 }
 
+// deleteNotification uses a different URL shape:
+//   DELETE /waInstance{id}/deleteNotification/{token}/{receiptId}
+// (token before receiptId, unlike all other methods where token is last)
+async function gaDelete(receiptId) {
+  const url = `${API_URL}/deleteNotification/${API_TOKEN}/${receiptId}`;
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`green-api DELETE deleteNotification ${res.status}: ${text}`);
+  }
+  return null;
+}
+
 // --- Incoming message normaliser ---------------------------------------------
 
 /**
@@ -148,7 +161,7 @@ async function start({ onInbound }) {
 
         // Always delete to advance the queue, even if the handler failed
         try {
-          await ga("DELETE", `deleteNotification/${receiptId}`);
+          await gaDelete(receiptId);
         } catch (err) {
           console.error("[greenapi] deleteNotification failed:", err.message);
         }
