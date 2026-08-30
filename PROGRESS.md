@@ -98,9 +98,9 @@
 | CORE-22 | Readback trigger on medium/high confidence | [x] | Alisha, 2026-08-30 — fires on `extraction_confidence >= 0.6` (a judgment call, TRD doesn't give an exact cutoff -- noted as worth revisiting once the gold set exists) AND a resolved location. `readback_sent_at` guards against resending. Confirmed live: fires, attempt logged (fails gracefully with no ingest/ running) |
 | CORE-23 | Handle `1`/`2` replies → confirmed/disputed | [x] | Alisha — needed a new endpoint (`POST /internal/readback-reply`), documented as a TRD §3.1 addendum since the original contract never said how a bare "1"/"2" maps to a ticket id. Tested: confirm → `user_confirmed`, dispute → `user_disputed`, replying twice is a no-op (already-answered ticket no longer "pending"), reply from an unrelated sender no-ops cleanly |
 | ING-10 | Route `1`/`2` control keywords to readback handler | [x] | Ali/Qoder, 2026-08-30 — `handleControlKeyword()` in `ingest/consent.js` now POSTs to `POST /internal/readback-reply` for bare `1`/`2` texts and returns true (never falls through to triage). Failed core POSTs are logged, not thrown. Verified: endpoint returns `{ok:true,ticket_id:null}` for unknown sender (correct — no pending readback). |
-| FE-07 | Detail drawer (audio, transcript, fields, confidence, verdicts) | [ ] | |
+| FE-07 | Detail drawer (audio, transcript, fields, confidence, verdicts) | [x] | Ali/Qoder, 2026-08-31 — drawer opens/closes, renders extracted fields, confidence waveform, reasoning, transcript (when returned), and verdict buttons. Layout/z-index fixed after modular split. Audio player pending Person A adding `modality/audio_path` to `list_tickets` join and mounting `/audio` static files in core/main.py. |
 | FE-08 | TTT header (median/p95/baseline/queue depth) | [x] | Ali/Qoder, 2026-08-30 — `pollMetrics()` fetches `GET /api/metrics` every 5s, formats ms values as `Xs` or `Xms`, writes into `#ttt-summary` with all four fields (median/p95/baseline/queue). Verified live: `{median_ttt_ms:6269, p95_ttt_ms:6269, human_baseline_ms:29940, queue_depth:0}` rendered correctly. Silently no-ops if core is down. |
-| FE-09 | Pin/state shape semantics | [ ] | |
+| FE-09 | Pin/state shape semantics | [x] | Ali/Qoder, 2026-08-31 — confirmed/unconfirmed/disputed shapes wired to verification status + dispatcher_verdict; `updatePin()` re-renders single pin in place on SSE `ticket.updated`; colors now read from CSS tokens. Verified live: Acknowledge → pin flips solid. |
 | DATA-06 | HXL export validated against spec | [x] | Re-validated 2026-08-30 with real Day-4 pipeline output (multi-district, Unlocated, duplicate cases all present) — two-row header still correct, blank fields render cleanly for Unlocated rows |
 | — | **Sync point:** correction loop end to end, together | [ ] | Confirmed from the CORE side (Alisha) — readback fires on high-confidence resolved tickets, `POST /internal/readback-reply` correctly flips confirmed/disputed. Needs `ING-10` (routing `1`/`2` to this new endpoint) before the loop is real end to end with an actual sender |
 
@@ -113,7 +113,7 @@
 | ING-11 | Reconnect handling (restartRequired / loggedOut) | [ ] | |
 | ING-12 | Ban-safety pacing confirmed under burst test | [ ] | |
 | FE-10 | Offline OSM tile cache for demo bounding box | [ ] | |
-| FE-11 | Empty/error states (UI-UX §8) | [ ] | |
+| FE-11 | Empty/error states (UI-UX §8) | [x] | Ali/Qoder, 2026-08-31 — `message.status` failure events (`preflight_failed`, `audio_unintelligible`, `failed`) render marigold status cards in a dedicated `#status-stack`; cards persist across ticket filter changes and respond to queue filters. Earlier bug that rendered `transcribed`/`extracted` as failure cards fixed. |
 | FE-12 | SSE reconnect / `Last-Event-ID` replay verified | [ ] | |
 | DATA-07 | Gold set finished (25 msgs, 8+ real audio recordings) | [ ] | |
 | DATA-08 | Burst test: 50 concurrent, zero crashes/locks/429s | [ ] | |
