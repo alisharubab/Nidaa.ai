@@ -1,0 +1,56 @@
+{
+  "median_ms": 29940,
+  "p95_ms": 33753,
+  "n": 6,
+  "recorded_at": "2026-08-30T01:07:15.940100+00:00",
+  "per_item": [
+    {
+      "id": "msg1",
+      "district": "dadu",
+      "intent": "ghar gir gya",
+      "urgency": "critical",
+      "items": "food",
+      "elapsed_ms": 26781
+    },
+    {
+      "id": "msg2",
+      "district": "sukkur",
+      "intent": "incident",
+      "urgency": "critical",
+      "items": "no",
+      "elapsed_ms": 26732
+    },
+    {
+      "id": "msg3",
+      "district": "dadu",
+      "intent": "infrastructure damage",
+      "urgency": "high",
+      "items": "water",
+      "elapsed_ms": 33753
+    },
+    {
+      "id": "msg4",
+      "district": "jacobabad",
+      "intent": "resource",
+      "urgency": "high",
+      "items": "food",
+      "elapsed_ms": 30983
+    },
+    {
+      "id": "msg5",
+      "district": "sukkur",
+      "intent": "incident",
+      "urgency": "moderate",
+      "items": "water",
+      "elapsed_ms": 25658
+    },
+    {
+      "id": "msg6",
+      "district": "larkana",
+      "intent": "incident",
+      "urgency": "high",
+      "items": "freeform",
+      "elapsed_ms": 29940
+    }
+  ]
+}
