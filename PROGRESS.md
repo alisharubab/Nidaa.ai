@@ -71,38 +71,38 @@
 
 | ID | Task | Done | Owner / Notes |
 | :-- | :-- | :--: | :-- |
-| CORE-11 | `queue.py`: asyncio queue + worker pool + token buckets | [ ] | |
-| CORE-12 | Retry/backoff + 429 bucket-halving | [ ] | |
-| CORE-13 | STT confidence gate (no_speech/logprob/compression/tokens) | [ ] | |
-| CORE-14 | Escalation path → `audio_unintelligible`, skip extraction | [ ] | |
-| CORE-15 | `queue_depth` on metrics SSE event, every 2s | [ ] | |
-| ING-06 | `consent.js`: consent ledger state machine, BAND/STOP | [x] | Alisha — implemented against the new `/internal/consent/*` endpoints, tested standalone with `node -e` (no WhatsApp needed): first-contact notice, no-resend, BAND→revoked all confirmed. Live-confirmed end-to-end via Telegram 2026-08-29: notice exactly once, BAND→revoked + raw_text/audio_path purged in DB, post-revoke silent drop. |
+| CORE-11 | `pipeline_queue.py`: asyncio queue + worker pool + token buckets | [x] | Alisha, 2026-08-30 — real `PipelineQueue` (generic, handler-based per ../CLAUDE.md's "main.py is the only orchestrator"), wired into `/internal/ingest` and `/api/simulate`. Tested: 3 concurrent messages processed in parallel, `queue_depth` in responses/`/api/metrics` is now literally accurate (was a placeholder since Day 2) |
+| CORE-12 | Retry/backoff + 429 bucket-halving | [x] | Alisha — `call_with_retry()`: exponential+jitter backoff, blocking Groq calls run via `asyncio.to_thread` (they'd otherwise block every worker, not just one). Tested with a controlled fake `RateLimitError`: 3 attempts, ~3.55s of real backoff delay, bucket refill correctly halved twice (1000→500→250 across two simulated 429s) |
+| CORE-13 | STT confidence gate (no_speech/logprob/compression/tokens) | [x] | Alisha — tested against real degraded audio (synthetic pink noise via `DATA-05`, no download needed): clean sample passes; -10dB SNR fails primary, escalation survives at the edge (avg_logprob -0.87 vs -0.90 threshold); -25dB SNR fails both models, caught specifically by the content-length check (1-word hallucinated transcript) rather than the numeric thresholds — confirms all four gate conditions are load-bearing, not just the obvious ones |
+| CORE-14 | Escalation path → `audio_unintelligible`, skip extraction | [x] | Alisha — confirmed live: primary fails → escalation attempted → still fails → `status=audio_unintelligible`, `error_code=STT_LOW_CONFIDENCE`, zero tickets created, `extract()` never called. Also built the outbound `POST /internal/reply` call to ingest/ (wasn't wired anywhere before) — tested that it fails gracefully (logs, doesn't crash the worker) when ingest/ isn't running |
+| CORE-15 | `queue_depth` on metrics SSE event, every 2s | [x] | Alisha — added to `/api/stream`'s existing 2s poll loop as a live-only `event: metrics` broadcast (not persisted to `events`, since it's a snapshot not replayable history). Confirmed firing via curl |
+| ING-06 | `consent.js`: consent ledger state machine, BAND/STOP | [x] | Alisha — implemented against the new `/internal/consent/*` endpoints, tested standalone with `node -e` (no WhatsApp needed): first-contact notice, no-resend, BAND→revoked all confirmed. Ali/Qoder — live-confirmed end-to-end via Telegram 2026-08-29: notice exactly once, BAND→revoked + raw_text/audio_path purged in DB, post-revoke silent drop. |
 | ING-07 | `outbound.js`: single reply queue, jittered pacing | [x] | Ali/Qoder, 2026-08-29 — live-confirmed: consent notice + reply-server message both delivered through the single jittered queue (1.5–3.0s); pump hardened so a failed send can no longer stall the queue. |
 | ING-08 | `templates.js`: consent/readback/unintelligible/location copy | [~] | consent_notice + audio_unintelligible live-delivered via Telegram (the latter via synthetic `/internal/reply`); readback + location_missing copy awaits the pipeline (Day 4) — location copy still has an in-code TODO. |
 | ING-09 | `POST /internal/reply` handler wired | [x] | Ali/Qoder, 2026-08-29 — reply server live on :3000; synthetic POST with a real sender_hash → template rendered + delivered to the Telegram chat. Core's pipeline will call it for real once readback lands (Day 4). |
 | FE-05 | Filter chips (urgency/district/time), client-side filtering | [ ] | |
 | FE-06 | Urgency colour ramp on pins/rows | [ ] | |
-| DATA-05 | Degraded-audio ladder script (`degrade_audio.py`) | [ ] | |
-| — | **Sync point:** confirm `audio_unintelligible` truly skips the LLM | [ ] | |
+| DATA-05 | Degraded-audio ladder script (`degrade_audio.py`) | [x] | Alisha, 2026-08-30 — real ffmpeg `amix` SNR mixing (reuses `pipeline/preflight.py`'s volume/duration helpers rather than duplicating them). Noise bed is synthesized via ffmpeg's built-in `anoisesrc` (no download/licensing question) as a dev/test stand-in — a real rain/wind recording will be more representative for the actual `DATA-09` ladder run later. Used directly to test `CORE-13`'s gate at -10dB and -25dB SNR |
+| — | **Sync point:** confirm `audio_unintelligible` truly skips the LLM | [ ] | Confirmed from the CORE side (Alisha) — degraded audio reliably reaches `audio_unintelligible` without ever calling `extract()`. Leaving unchecked until the full path is confirmed together, including the actual outbound WhatsApp/Telegram reply |
 
 ## Day 4 — Intelligence and standards
 
 | ID | Task | Done | Owner / Notes |
 | :-- | :-- | :--: | :-- |
 | CORE-16 | Multi-intent extraction + fallback-model retry | [x] | Pulled forward, done as part of `CORE-08` — `extract_with_fallback()` already built and tested (both directly and via `CORE-09`'s live pipeline run). Multi-intent confirmed live: "Larkana aur Shikarpur" → 2 correctly separate tickets |
-| CORE-17 | Glossary loaded into system prompt at startup | [ ] | |
-| CORE-18 | `pipeline/geocode.py`: alias → exact → fuzzy → none | [ ] | |
-| CORE-19 | `pipeline/urgency.py`: blended max score | [ ] | |
-| CORE-20 | `pipeline/dedupe.py`: key-based near-duplicate flag | [ ] | |
+| CORE-17 | Glossary loaded into system prompt at startup | [x] | Alisha, 2026-08-30 — `{GLOSSARY}` placeholder in `system_extract.txt`, formatted from `prompts/glossary.json` (one source of truth now, not two), composed once and cached, warmed explicitly at app startup |
+| CORE-18 | `pipeline/geocode.py`: alias → exact → fuzzy → none | [x] | Alisha — real alias/exact/fuzzy/none cascade against the actual gazetteer+aliases. Tested 8 scenarios incl. Urdu-script alias, case/whitespace tolerance, fuzzy typos, and a genuinely interesting finding: a misspelling *plus* a noise word ("Dadoo Distrct") can defeat both alias and fuzzy matching and correctly falls to "none" rather than guessing |
+| CORE-19 | `pipeline/urgency.py`: blended max score | [x] | Alisha — single-term rules + the "child/elderly + water-rise" compound rule. Tested 7 cases incl. confirming rules can escalate (model=info→critical) but never de-escalate (model=critical/high stays put even when rules say info) |
+| CORE-20 | `pipeline/dedupe.py`: key-based near-duplicate flag | [x] | Alisha — bucket-key lookup against real SQLite. Tested: same district+intent+item within 15min correctly flags `duplicate_of`; different item/district don't match; Unlocated tickets never match (NULL adm2_name can't equal NULL in SQL, by design not oversight) |
 | CORE-21 | Real `GET /api/export/hxl.csv` | [x] | Alisha — tested, two-row header confirmed correct (human-readable + HXL hashtags), one row per item |
-| CORE-22 | Readback trigger on medium/high confidence | [ ] | |
-| CORE-23 | Handle `1`/`2` replies → confirmed/disputed | [ ] | |
+| CORE-22 | Readback trigger on medium/high confidence | [x] | Alisha, 2026-08-30 — fires on `extraction_confidence >= 0.6` (a judgment call, TRD doesn't give an exact cutoff -- noted as worth revisiting once the gold set exists) AND a resolved location. `readback_sent_at` guards against resending. Confirmed live: fires, attempt logged (fails gracefully with no ingest/ running) |
+| CORE-23 | Handle `1`/`2` replies → confirmed/disputed | [x] | Alisha — needed a new endpoint (`POST /internal/readback-reply`), documented as a TRD §3.1 addendum since the original contract never said how a bare "1"/"2" maps to a ticket id. Tested: confirm → `user_confirmed`, dispute → `user_disputed`, replying twice is a no-op (already-answered ticket no longer "pending"), reply from an unrelated sender no-ops cleanly |
 | ING-10 | Route `1`/`2` control keywords to readback handler | [ ] | |
 | FE-07 | Detail drawer (audio, transcript, fields, confidence, verdicts) | [ ] | |
 | FE-08 | TTT header (median/p95/baseline/queue depth) | [ ] | |
 | FE-09 | Pin/state shape semantics | [ ] | |
-| DATA-06 | HXL export validated against spec | [ ] | |
-| — | **Sync point:** correction loop end to end, together | [ ] | |
+| DATA-06 | HXL export validated against spec | [x] | Re-validated 2026-08-30 with real Day-4 pipeline output (multi-district, Unlocated, duplicate cases all present) — two-row header still correct, blank fields render cleanly for Unlocated rows |
+| — | **Sync point:** correction loop end to end, together | [ ] | Confirmed from the CORE side (Alisha) — readback fires on high-confidence resolved tickets, `POST /internal/readback-reply` correctly flips confirmed/disputed. Needs `ING-10` (routing `1`/`2` to this new endpoint) before the loop is real end to end with an actual sender |
 
 ## Day 5 — Polish and proof
 

@@ -2,39 +2,40 @@
 # full API contract (frozen after Day 1 — do not change a route shape here
 # without updating that doc and telling your teammate).
 #
-# Day-2 status: preflight -> stt -> extract now run for real, synchronously,
-# inline in the /internal/ingest request (see _run_pipeline_sync below).
-# Deliberately NOT yet in this synchronous version, all Day 3+ scope:
-#   - no queue/worker pool or rate-limit token buckets (CORE-11, Day 3)
-#   - no STT confidence gate or escalation (CORE-13/14, Day 3) -- whatever
-#     Whisper returns is accepted as-is
-#   - no geocoding (CORE-18, Day 4) -- tickets carry location_raw as
-#     loc_name only; adm2_name/adm1_name/pcode/latitude/longitude stay NULL
-#     until the real geocoder resolves them. That's correct, not missing --
-#     see hard rule 3 in ../CLAUDE.md.
-#   - no rule-blended urgency (CORE-19, Day 4) -- urgency is the model's
-#     raw value
-#   - no dedupe (CORE-20, Day 4)
-# /api/simulate still exists for injecting a fully-formed ticket (including
-# a location) without needing the geocoder that doesn't exist yet.
+# Day-4 status: the full pipeline is now wired end to end -- preflight ->
+# stt (gate + escalation) -> extract -> geocode -> urgency-blend -> dedupe,
+# through the Day-3 async worker pool. Gazetteer/aliases/system-prompt
+# (with the glossary baked in) are loaded once at startup, not per-message.
+#
+# Deliberately NOT yet wired, remaining Day 4/5 scope:
+#   - no readback trigger (CORE-22) or 1/2 reply handling (CORE-23) --
+#     those need a new contract addition, tracked separately, not done yet
+#   - no burst/acoustic test hardening pass (CORE-24, Day 5)
 
 import asyncio
 import csv
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
 import db
-from config import DEMO_MODE
+from config import (
+    DEMO_MODE, INGEST_URL,
+    STT_MODEL_PRIMARY, STT_MODEL_ESCALATION,
+    LLM_MODEL_PRIMARY, LLM_MODEL_FALLBACK,
+)
 from events import replay_since
-from pipeline import preflight, stt
-from pipeline.extract import extract_with_fallback, ExtractionValidationError
+from pipeline import preflight, stt, geocode, dedupe
+from pipeline.extract import extract, load_system_prompt, ExtractionValidationError
+from pipeline.urgency import blended_urgency
+from pipeline_queue import PipelineQueue, stt_bucket, llm_bucket, call_with_retry
 
 app = FastAPI(title="Nidaa-AI core")
 
@@ -45,14 +46,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+pipeline_queue: PipelineQueue | None = None
+district_index: dict = {}
+aliases: dict = {}
+
 
 @app.on_event("startup")
 def on_startup():
+    global pipeline_queue, district_index, aliases
     db.init_db()
-    # TODO(CORE-01 remainder): load gazetteer (data/pak_gazetteer.csv),
-    # aliases (data/aliases.json), and the extraction prompt into memory
-    # once here, when pipeline/geocode.py and pipeline/extract.py are wired
-    # into the worker loop (Day 2).
+    # CORE-17/18: load once at startup, not per-message -- re-reading and
+    # re-parsing the gazetteer/aliases/prompt files on every single ticket
+    # would be wasted I/O on the hot path, same reasoning as
+    # extract.load_system_prompt()'s own internal cache.
+    district_index = geocode.build_district_index(geocode.load_gazetteer())
+    aliases = geocode.load_aliases()
+    load_system_prompt()
+    pipeline_queue = PipelineQueue(handler=_run_pipeline)
+    pipeline_queue.start()
 
 
 @app.get("/health")
@@ -80,77 +91,193 @@ async def consent_revoke(request: Request):
     return {"ok": True}
 
 
-def _run_pipeline_sync(message_id: int, t_received: str, modality: str,
-                        audio_path: str | None, text: str | None) -> None:
-    """CORE-09: preflight -> stt -> extract, synchronously, one message at a
-    time (no queue yet -- CORE-11 replaces this call site on Day 3 without
-    changing the stage functions themselves). Every exit path updates
-    `messages.status` so nothing is left silently stuck at "received"."""
-    if modality == "audio":
-        result = preflight.run_preflight(audio_path)
-        if not result["ok"]:
+@app.post("/internal/readback-reply")
+async def readback_reply(request: Request):
+    """CORE-23. See docs/TRD.md section 3.1's readback-reply addendum."""
+    body = await request.json()
+    sender_hash = body["sender_hash"]
+    reply = body.get("reply")
+    if reply not in ("1", "2"):
+        raise HTTPException(400, "reply must be '1' or '2'")
+
+    with db.get_connection() as conn:
+        ticket = db.find_pending_readback_ticket(conn, sender_hash)
+        if ticket is None:
+            return {"ok": True, "ticket_id": None}
+        db.update_verification(conn, ticket["id"], "user_confirmed" if reply == "1" else "user_disputed")
+
+    return {"ok": True, "ticket_id": ticket["id"]}
+
+
+READBACK_MIN_CONFIDENCE = 0.6  # judgment call, see the CORE-22 comment below
+
+
+def _format_items_for_readback(items: list[dict]) -> str:
+    """"20 khandano ke liye food, water" style summary for the readback
+    template's {items} var -- ingest/templates.js composes the actual
+    Roman Urdu sentence around this, core never writes user-facing copy."""
+    if not items:
+        return ""
+    return ", ".join(
+        f"{i['qty']} {i.get('unit', '')} {i['item']}".strip() if i.get("qty") else i["item"]
+        for i in items
+    )
+
+
+async def _fire_reply(sender_hash: str, template: str, template_vars: dict | None = None):
+    """Calls ingest/'s POST /internal/reply (docs/TRD.md 3.2) so it can
+    compose and send the actual Roman Urdu text -- core never composes
+    user-facing copy itself. Best-effort: if ingest/ isn't reachable (e.g.
+    not running during core-only dev/testing), log and move on rather than
+    let a notification failure break the pipeline's own status update."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{INGEST_URL}/internal/reply",
+                json={"sender_hash": sender_hash, "template": template, "vars": template_vars or {}},
+            )
+    except Exception as e:
+        print(f"[main] could not reach ingest/ to fire '{template}' reply: {e!r}", flush=True)
+
+
+def _aggregate_segment_metrics(segments: list) -> dict:
+    if not segments:
+        return {"stt_avg_logprob": None, "stt_no_speech_prob": None, "stt_compression": None}
+    return {
+        "stt_avg_logprob": sum(s.get("avg_logprob", 0) for s in segments) / len(segments),
+        "stt_no_speech_prob": max(s.get("no_speech_prob", 0) for s in segments),
+        "stt_compression": max(s.get("compression_ratio", 0) for s in segments),
+    }
+
+
+async def _run_pipeline(message_id: int) -> None:
+    """CORE-09/13/14: preflight -> stt (gate + escalation) -> extract, run
+    by a PipelineQueue worker. Every exit path updates `messages.status` so
+    nothing is left silently stuck at "received" (TRD section 9)."""
+    with db.get_connection() as conn:
+        msg = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+    sender_hash = msg["sender_hash"]
+    t_received = msg["t_received"]
+    transcript = msg["raw_text"] or ""
+
+    if msg["modality"] == "audio":
+        preflight_result = await asyncio.to_thread(preflight.run_preflight, msg["audio_path"])
+        if not preflight_result["ok"]:
             with db.get_connection() as conn:
-                db.update_message_status(conn, message_id, "preflight_failed", error_code=result["error_code"])
+                db.update_message_status(conn, message_id, "preflight_failed", error_code=preflight_result["error_code"])
             return
 
-        stt_result = stt.transcribe(audio_path)
-        transcript = stt_result["text"]
-        segments = stt_result["segments"]
+        result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_PRIMARY)
+        escalated = False
+        if not stt.passes_confidence_gate(result):
+            escalated = True
+            result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_ESCALATION)
+
+        gate_passed = stt.passes_confidence_gate(result)
+        transcript = result["text"]
         with db.get_connection() as conn:
             db.update_message_status(
-                conn, message_id, "transcribed", t_transcribed=_now(),
-                # raw_text = transcript once STT has run (TRD §2: "inbound
-                # text, or transcript"). Also persist the confidence signals
-                # -- needed for CORE-13's gate on Day 3, and for the
-                # dashboard's confidence badge either way; storing them here
-                # rather than discarding them after this function returns.
+                conn, message_id,
+                "transcribed" if gate_passed else "audio_unintelligible",
+                error_code=None if gate_passed else "STT_LOW_CONFIDENCE",
+                t_transcribed=_now(),
                 raw_text=transcript,
-                detected_language=stt_result.get("language"),
-                stt_model_used=stt_result.get("model"),
-                stt_avg_logprob=(sum(s.get("avg_logprob", 0) for s in segments) / len(segments)) if segments else None,
-                stt_no_speech_prob=max((s.get("no_speech_prob", 0) for s in segments), default=None),
-                stt_compression=max((s.get("compression_ratio", 0) for s in segments), default=None),
+                detected_language=result.get("language"),
+                stt_model_used=result.get("model"),
+                **_aggregate_segment_metrics(result.get("segments") or []),
             )
-        # TODO(CORE-13/14, Day 3): confidence gate + escalation belong here,
-        # between transcription and extraction. A transcript that fails the
-        # gate twice must set status=audio_unintelligible and return here,
-        # WITHOUT calling extract() below -- see hard rule 4 in ../CLAUDE.md.
-    else:
-        transcript = text or ""
+
+        if not gate_passed:
+            # Hard rule 4 (../CLAUDE.md): a transcript that fails the gate
+            # after escalation must NEVER reach extract(). Fire the
+            # fallback template and stop here.
+            await _fire_reply(sender_hash, "audio_unintelligible")
+            return
+        # `escalated` is intentionally unused past this point in Day 3 --
+        # nothing currently branches on which model ultimately succeeded,
+        # it's implicitly recorded via messages.stt_model_used.
 
     try:
-        extraction = extract_with_fallback(transcript)
+        try:
+            extraction = await call_with_retry(llm_bucket, extract, transcript, model=LLM_MODEL_PRIMARY)
+        except ExtractionValidationError:
+            extraction = await call_with_retry(
+                llm_bucket, extract, transcript, model=LLM_MODEL_FALLBACK,
+            )
     except ExtractionValidationError:
         with db.get_connection() as conn:
             db.update_message_status(conn, message_id, "failed", error_code="EXTRACTION_INVALID")
         return
 
     t_extracted = _now()
+    any_unlocated = False
     with db.get_connection() as conn:
         for record in extraction["records"]:
-            db.insert_ticket(
+            # CORE-18: deterministic geocoding. Only this call may populate
+            # adm2_name/adm1_name/pcode/latitude/longitude -- never the LLM
+            # (hard rule 3, ../CLAUDE.md). "none" leaves them all NULL.
+            geo = geocode.geocode(record["location_raw"], record["district_guess"], district_index, aliases)
+            if geo["geocode_method"] == "none":
+                any_unlocated = True
+
+            # CORE-19: rules can only escalate the model's urgency, never
+            # de-escalate it (docs/TRD.md 4.6).
+            final_urgency = blended_urgency(record["urgency"], transcript)
+
+            # CORE-20: only attempt dedup once a ticket has a real district
+            # -- adm2_name IS NULL never matches anything in SQL (NULL =
+            # NULL is not true), so skipping it for Unlocated tickets isn't
+            # a workaround, it's just not paying for a query that could
+            # never find a match anyway.
+            duplicate_of = None
+            if geo["adm2_name"] is not None:
+                key = dedupe.bucket_key(
+                    geo["adm2_name"], record["intent"],
+                    dedupe.primary_item_from_items(record["items"]),
+                    datetime.now(timezone.utc),
+                )
+                duplicate_of = dedupe.find_duplicate(conn, key)
+
+            ticket_id = db.insert_ticket(
                 conn, message_id=message_id,
-                intent=record["intent"], urgency=record["urgency"],
+                intent=record["intent"], urgency=final_urgency,
                 loc_name=record["location_raw"],
-                # adm2_name/adm1_name/pcode/latitude/longitude intentionally
-                # NOT set from district_guess/province_guess here -- those
-                # are the LLM's unverified guesses, not a geocoder result.
-                # Only pipeline/geocode.py (CORE-18, Day 4) may populate
-                # those columns. Until then the ticket correctly sits in
-                # the Unlocated state.
+                adm2_name=geo["adm2_name"], adm1_name=geo["adm1_name"], pcode=geo["pcode"],
+                latitude=geo["latitude"], longitude=geo["longitude"],
+                geocode_method=geo["geocode_method"], geocode_score=geo["geocode_score"],
                 items=record["items"],
                 people_affected=record["people_affected"],
                 casualties=record["casualties"],
                 missing_fields=record["missing_fields"],
                 extraction_conf=record["extraction_confidence"],
                 reasoning_note=record["reasoning_note"],
+                duplicate_of=duplicate_of,
             )
+
+            # CORE-22: readback only on medium/high confidence (PRD 3.2).
+            # The TRD doesn't give an exact numeric cutoff for "medium" --
+            # 0.6 is a judgment call made here, not a value pulled from the
+            # spec; worth revisiting once the gold set gives a real sense
+            # of the model's confidence distribution.
+            if record["extraction_confidence"] >= READBACK_MIN_CONFIDENCE and geo["adm2_name"] is not None:
+                db.mark_readback_sent(conn, ticket_id)
+                await _fire_reply(sender_hash, "readback", {
+                    "adm2": geo["adm2_name"],
+                    "province": geo["adm1_name"],
+                    "items": _format_items_for_readback(record["items"]),
+                    "urgency": final_urgency,
+                })
         t_published = _now()
         ttt_ms = int((_parse_iso(t_published) - _parse_iso(t_received)).total_seconds() * 1000)
         db.update_message_status(
             conn, message_id, "extracted",
             t_extracted=t_extracted, t_published=t_published, ttt_ms=ttt_ms,
         )
+
+    if any_unlocated:
+        # docs/TRD.md 4.5, GEOCODE_NO_MATCH row in the error taxonomy
+        # (section 9): ask the sender for a WhatsApp live-location pin.
+        await _fire_reply(sender_hash, "location_missing")
 
 
 def _now() -> str:
@@ -178,13 +305,8 @@ async def internal_ingest(request: Request):
             received_at=t_received,
         )
 
-    _run_pipeline_sync(message_id, t_received, body["modality"], body.get("audio_path"), body.get("text"))
-
-    # Response shape is the frozen TRD 3.1 contract regardless of the fact
-    # that processing already happened synchronously above by the time we
-    # respond -- "queued"/"queue_depth" become literally accurate once
-    # CORE-11's real queue replaces _run_pipeline_sync's direct call.
-    return {"message_id": message_id, "queued": True, "queue_depth": 0}
+    await pipeline_queue.put(message_id)
+    return {"message_id": message_id, "queued": True, "queue_depth": pipeline_queue.depth}
 
 
 # --- Public (dashboard) -----------------------------------------------------
@@ -203,7 +325,6 @@ def _parse_since(since: str) -> str:
     unit = since[-1]
     amount = int(since[:-1])
     unit_map = {"h": "hours", "m": "minutes", "d": "days"}
-    from datetime import timedelta
     delta = timedelta(**{unit_map[unit]: amount})
     return (datetime.now(timezone.utc) - delta).isoformat()
 
@@ -222,7 +343,9 @@ def _read_human_baseline_ms() -> int | None:
 @app.get("/api/metrics")
 async def get_metrics():
     with db.get_connection() as conn:
-        return db.get_metrics(conn, human_baseline_ms=_read_human_baseline_ms())
+        metrics = db.get_metrics(conn, human_baseline_ms=_read_human_baseline_ms())
+    metrics["queue_depth"] = pipeline_queue.depth if pipeline_queue else 0
+    return metrics
 
 
 @app.get("/api/stream")
@@ -245,7 +368,12 @@ async def stream(request: Request):
             for row in rows:
                 seq = row["seq"]
                 yield {"id": str(row["seq"]), "event": row["kind"], "data": row["payload"]}
-            yield {"comment": "ping"}
+            # CORE-15: queue_depth broadcast every 2s (docs/TRD.md 4.1) so
+            # backpressure is visible live. Not persisted to `events` --
+            # it's a live snapshot, not part of the replayable ticket
+            # history, so it deliberately has no `id` (never replayed).
+            depth = pipeline_queue.depth if pipeline_queue else 0
+            yield {"event": "metrics", "data": json.dumps({"queue_depth": depth})}
             await asyncio.sleep(2)
 
     return EventSourceResponse(event_generator())
@@ -321,15 +449,8 @@ async def simulate(request: Request):
         )
 
     # TRD section 10: "nothing about the demo is faked, only the transport
-    # is bypassed" -- runs through the exact same _run_pipeline_sync used by
-    # /internal/ingest (CORE-09), not a canned/fabricated ticket. Since
-    # pipeline/geocode.py doesn't exist yet (CORE-18, Day 4), simulated
-    # tickets correctly land Unlocated until then -- that's honest, not a
-    # regression from the old hardcoded-Dadu-with-coordinates version.
-    _run_pipeline_sync(message_id, t_received, "text", None, text)
-
-    with db.get_connection() as conn:
-        tickets = conn.execute(
-            "SELECT id FROM tickets WHERE message_id = ?", (message_id,)
-        ).fetchall()
-    return {"message_id": message_id, "ticket_ids": [t["id"] for t in tickets]}
+    # is bypassed" -- goes through the exact same queue + worker pool as a
+    # real /internal/ingest call (Day 3), not a shortcut around it. The
+    # ticket isn't back yet by the time this responds -- watch /api/stream.
+    await pipeline_queue.put(message_id)
+    return {"message_id": message_id, "queued": True, "queue_depth": pipeline_queue.depth}

@@ -233,6 +233,17 @@ POST /internal/consent/revoke
 ```
 Behaviour: sets `state=revoked`, `revoked_at=now`, and purges that sender's stored audio files and transcript text from `messages` (PRD §3.1/§3.4). Called by the daemon when it sees `BAND` or `STOP` from a sender, before anything else in the message-handling flow (TRD §6, step 4).
 
+> **Readback-reply addendum (post-v1.0.0, added during implementation, CORE-22/23).** Same class of gap as the consent addendum above: section 6 says the daemon routes `1`/`2` replies to "the readback handler," but never says what that handler calls. A bare `1` or `2` carries no ticket id, so core has to infer which ticket it's answering:
+
+```
+POST /internal/readback-reply
+{ "sender_hash": "sha256:...", "reply": "1" | "2" }
+
+200 OK
+{ "ok": true, "ticket_id": 88 }
+```
+Behaviour: core looks up the most recent ticket belonging to this sender with a readback sent and still `unconfirmed` (i.e. an outstanding question). `1` sets `verification_status=user_confirmed`, `2` sets `user_disputed`. If there's no outstanding readback for this sender, returns `{"ok": true, "ticket_id": null}` — not an error, just nothing to do (e.g. a stray `1` with no pending question). The daemon should route `1`/`2` here **before** anything else, same as `BAND`/`STOP` — never into the triage pipeline (TRD §6, step 4).
+
 ### 3.2 Outbound callback (Python core to Node daemon)
 
 ```
