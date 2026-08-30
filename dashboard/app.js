@@ -108,21 +108,10 @@ function renderTicketCard(ticket) {
 
 function addTicket(ticket) {
   tickets.unshift(ticket);
-  const stream = document.getElementById("ticket-stream");
-
-  // Remove empty state on first ticket
   const emptyState = document.getElementById("empty-state");
   if (emptyState) emptyState.remove();
-
-  // Insert after the stream header
-  const header = stream.querySelector(".stream-header");
-  if (header && header.nextSibling) {
-    stream.insertBefore(renderTicketCard(ticket), header.nextSibling);
-  } else {
-    stream.prepend(renderTicketCard(ticket));
-  }
-
   if (typeof renderTicketPin === "function") renderTicketPin(ticket);
+  applyFilters();  // re-renders stream + pins respecting active filters
   updateCounts();
 }
 
@@ -130,10 +119,7 @@ function updateTicket(ticket) {
   const idx = tickets.findIndex((t) => t.id === ticket.id);
   if (idx === -1) return addTicket(ticket);
   tickets[idx] = ticket;
-  const stream = document.getElementById("ticket-stream");
-  // +1 because the first child is the stream-header
-  const existing = stream.children[idx + 1];
-  if (existing) existing.replaceWith(renderTicketCard(ticket));
+  applyFilters();  // re-renders stream + pins respecting active filters
   updateCounts();
 }
 
@@ -206,19 +192,135 @@ function connectStream() {
   });
 }
 
-// --- Filter chips (TODO FE-05: full logic) --------------------------------
+// --- TTT header (FE-08) --------------------------------------------------
 
-function initFilterChips() {
+/**
+ * Poll GET /api/metrics every 5s and update the TTT header display.
+ * Metrics shape (TRD §3.3): { median_ttt_ms, p95_ttt_ms, human_baseline_ms,
+ *   queue_depth, ... }
+ */
+function pollMetrics() {
+  async function fetch_and_render() {
+    try {
+      const res = await fetch(`${CORE_URL}/api/metrics`);
+      if (!res.ok) return;
+      const m = await res.json();
+
+      const fmt = (ms) =>
+        ms == null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+
+      const el = document.getElementById("ttt-summary");
+      if (el) {
+        el.innerHTML =
+          `median <strong>${fmt(m.median_ttt_ms)}</strong>` +
+          ` · p95 <strong>${fmt(m.p95_ttt_ms)}</strong>` +
+          ` · baseline <strong>${fmt(m.human_baseline_ms)}</strong>` +
+          (m.queue_depth != null
+            ? ` · queue <strong>${m.queue_depth}</strong>`
+            : "");
+      }
+    } catch { /* silently ignore if core is down */ }
+  }
+
+  fetch_and_render();
+  setInterval(fetch_and_render, 5000);
+}
+
+// --- Filter chips (FE-05) -----------------------------------------------
+
+// Active filter state. urgency is one of: all|critical|high|moderate|info
+// queue is one of: all|critical|unlocated|unintelligible|disputed
+// Both can be active simultaneously; the stream shows the intersection.
+let activeUrgency = "all";
+let activeQueue   = "all";
+
+/** Return true if ticket passes the current active filters. */
+function ticketMatchesFilter(ticket) {
+  // Queue filter (left rail)
+  if (activeQueue !== "all") {
+    if (activeQueue === "critical"       && ticket.urgency !== "critical") return false;
+    if (activeQueue === "unlocated"      && (ticket.latitude != null && ticket.longitude != null)) return false;
+    if (activeQueue === "unintelligible" && ticket.error_code !== "STT_LOW_CONFIDENCE") return false;
+    if (activeQueue === "disputed"       && ticket.verification_status !== "user_disputed") return false;
+  }
+  // Urgency chip filter (map overlay bar)
+  if (activeUrgency !== "all" && ticket.urgency !== activeUrgency) return false;
+  return true;
+}
+
+/** Re-render the ticket stream and map pins to match current filters. */
+function applyFilters() {
+  const stream = document.getElementById("ticket-stream");
+
+  // Remove all cards (leave the stream-header)
+  const header = stream.querySelector(".stream-header");
+  stream.innerHTML = "";
+  if (header) stream.appendChild(header);
+
+  const visible = tickets.filter(ticketMatchesFilter);
+
+  if (visible.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "filter-empty";
+    empty.textContent = "No tickets match this filter.";
+    stream.appendChild(empty);
+  } else {
+    visible.forEach((t) => stream.appendChild(renderTicketCard(t)));
+  }
+
+  // Re-draw map pins for visible tickets only
+  if (typeof refreshPins === "function") refreshPins(visible);
+
+  // Update chip counts
+  updateChipCounts();
+}
+
+/** Update the count badges on each urgency chip. */
+function updateChipCounts() {
   const bar = document.getElementById("filter-bar");
   if (!bar) return;
-  bar.addEventListener("click", (e) => {
-    const chip = e.target.closest(".filter-chip");
-    if (!chip) return;
-    // Toggle selection (single-select for Day 1; multi-select in FE-05)
-    bar.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("selected"));
-    chip.classList.add("selected");
-    // TODO(FE-05): actually filter tickets array + re-render stream + map
+  const counts = { all: tickets.length, critical: 0, high: 0, moderate: 0, info: 0 };
+  tickets.forEach((t) => {
+    if (counts[t.urgency] !== undefined) counts[t.urgency]++;
   });
+  bar.querySelectorAll(".filter-chip").forEach((chip) => {
+    const u = chip.dataset.urgency;
+    let badge = chip.querySelector(".chip-count");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "chip-count";
+      chip.appendChild(badge);
+    }
+    badge.textContent = counts[u] ?? "";
+  });
+}
+
+function initFilterChips() {
+  // Map filter bar chips (urgency)
+  const bar = document.getElementById("filter-bar");
+  if (bar) {
+    bar.addEventListener("click", (e) => {
+      const chip = e.target.closest(".filter-chip");
+      if (!chip) return;
+      bar.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("selected"));
+      chip.classList.add("selected");
+      activeUrgency = chip.dataset.urgency || "all";
+      applyFilters();
+    });
+  }
+
+  // Left rail queue nav
+  const queueList = document.getElementById("queue-list");
+  if (queueList) {
+    queueList.addEventListener("click", (e) => {
+      const btn = e.target.closest(".queue-item");
+      if (!btn) return;
+      queueList.querySelectorAll(".queue-item").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeQueue = btn.dataset.filter || "all";
+      applyFilters();
+    });
+  }
 }
 
 // --- Presentation mode (UI-UX §10) ---------------------------------------
@@ -235,4 +337,5 @@ document.addEventListener("DOMContentLoaded", () => {
   checkPresentMode();
   initFilterChips();
   connectStream();
+  pollMetrics();
 });

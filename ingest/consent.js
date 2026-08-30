@@ -50,9 +50,20 @@ async function handleControlKeyword(senderHash, text) {
     await revokeConsent(senderHash);
     return true;
   }
-  // "1" / "2" (readback confirm/dispute) are handled by the readback
-  // handler, not here -- TODO(ING-10): route to that handler once it
-  // exists (docs/IMPLEMENTATION_PLAN.md ING-10).
+  // "1" / "2": sender confirming or disputing a readback. Route to
+  // POST /internal/readback-reply. TRD §6 step 4 — these never enter
+  // the triage pipeline. CORE-23 is the other side of this call.
+  if (normalised === "1" || normalised === "2") {
+    const res = await fetch(`${CORE_URL}/internal/readback-reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender_hash: senderHash, reply: normalised }),
+    });
+    if (!res.ok) {
+      console.error(`[consent] readback-reply failed: ${res.status}`);
+    }
+    return true; // handled — never falls through to triage
+  }
   return false;
 }
 

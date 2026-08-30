@@ -548,6 +548,14 @@ body {
   font-size: 14px; color: var(--silt); max-width: 280px;
 }
 
+/* Filter-empty state shown when no tickets match active filters (FE-05) */
+.filter-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--silt);
+}
+
 /* --- Reduced motion (docs/UI-UX-REQUIREMENTS.md §7.3) ----------------- */
 
 @media (prefers-reduced-motion: reduce) {
