@@ -30,6 +30,18 @@ def extract(transcript: str, model: str = LLM_MODEL_PRIMARY) -> dict:
     validates the result against a Pydantic model matching the schema in
     docs/TRD.md section 4.4.
 
+    IMPORTANT (confirmed via smoke_test_groq.py, CORE-05): LLM_MODEL_FALLBACK
+    (qwen/qwen3.6-27b) is a Groq "reasoning" model. Calling it with
+    response_format=json_object and NO reasoning_format set fails outright
+    (400 json_validate_failed) -- it emits a <think>...</think> block before
+    the answer, which breaks JSON parsing. When model == LLM_MODEL_FALLBACK,
+    the call MUST also pass reasoning_format="hidden" and
+    reasoning_effort="none" (no benefit from chain-of-thought on a
+    structured-extraction task). LLM_MODEL_PRIMARY (GPT-OSS) does NOT
+    support or need reasoning_format -- it already returns reasoning in a
+    separate field by default, so passing these params to the primary
+    model call would be wrong, not just redundant.
+
     TODO(CORE-08): implement the call + Pydantic validation. Raise
     ExtractionValidationError on a parse/schema failure so the caller can
     retry once against LLM_MODEL_FALLBACK (docs/TRD.md: never fall back to
@@ -41,5 +53,8 @@ def extract(transcript: str, model: str = LLM_MODEL_PRIMARY) -> dict:
 
 def extract_with_fallback(transcript: str) -> dict:
     """Primary model, then exactly one retry on LLM_MODEL_FALLBACK if the
-    first attempt raises ExtractionValidationError. TODO(CORE-16)."""
+    first attempt raises ExtractionValidationError. TODO(CORE-16). See the
+    reasoning_format note on extract() above -- the fallback call needs
+    different kwargs than the primary call, not just a different model ID.
+    """
     raise NotImplementedError
