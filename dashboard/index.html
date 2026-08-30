@@ -115,6 +115,13 @@
     </section>
   </div>
 
+  <!-- FE-07: Detail drawer + scrim (UI-UX §6.5) -->
+  <!-- Mounted outside app-shell so it overlays the full viewport -->
+  <div class="drawer-scrim" id="drawer-scrim"></div>
+  <aside class="detail-drawer" id="detail-drawer" role="dialog" aria-label="Ticket detail" tabindex="-1">
+    <!-- Content injected by _renderDrawerContent() in app.js -->
+  </aside>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="map.js"></script>
   <script src="app.js"></script>

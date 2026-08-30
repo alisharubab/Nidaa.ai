@@ -37,26 +37,50 @@ function initMap() {
 
 /**
  * Add a single pin for a ticket. Colour reflects urgency (FE-06).
- * Shape semantics (solid/hollow/double-ring) are FE-09.
+ * Shape semantics (FE-09):
+ *   confirmed   → solid fill + check symbol in tooltip
+ *   disputed    → hollow ring, double border (vermilion inner ring via CSS shadow)
+ *   unconfirmed → hollow ring (fill transparent)
  */
+function pinOptions(ticket) {
+  const urgency = ticket.urgency || "info";
+  const { fill, border } = URGENCY_COLOURS[urgency] || URGENCY_COLOURS.info;
+  const state =
+    ticket.verification_status === "user_confirmed" || ticket.dispatcher_verdict === "verified"
+      ? "confirmed"
+      : ticket.verification_status === "user_disputed"
+        ? "disputed"
+        : "unconfirmed";
+
+  if (state === "confirmed") {
+    return { radius: 9, color: border, weight: 2, fillColor: fill, fillOpacity: 0.9 };
+  }
+  if (state === "disputed") {
+    // Double ring: outer ring in urgency border colour, inner ring via boxShadow
+    // equivalent — simulated by thick weight + vermilion dashArray ring
+    return { radius: 9, color: "#C62A22", weight: 3, fillColor: fill, fillOpacity: 0.15 };
+  }
+  // unconfirmed: hollow ring
+  return { radius: 9, color: border, weight: 2, fillColor: fill, fillOpacity: 0.15 };
+}
+
+function stateLabel(ticket) {
+  if (ticket.verification_status === "user_confirmed" || ticket.dispatcher_verdict === "verified") return "✓ Confirmed";
+  if (ticket.verification_status === "user_disputed") return "⚠ Disputed";
+  return "Unconfirmed";
+}
+
 function renderTicketPin(ticket) {
   if (!pinLayer || ticket.latitude == null || ticket.longitude == null) return;
 
   const urgency = ticket.urgency || "info";
-  const { fill, border } = URGENCY_COLOURS[urgency] || URGENCY_COLOURS.info;
-
-  const marker = L.circleMarker([ticket.latitude, ticket.longitude], {
-    radius: 9,
-    color: border,
-    weight: 2,
-    fillColor: fill,
-    fillOpacity: 0.9,
-  });
+  const marker = L.circleMarker([ticket.latitude, ticket.longitude], pinOptions(ticket));
 
   marker.bindTooltip(
     `<strong>${ticket.adm2_name || "Unknown district"}</strong><br>` +
     `${urgency.charAt(0).toUpperCase() + urgency.slice(1)}` +
-    (ticket.pcode ? ` · ${ticket.pcode}` : ""),
+    (ticket.pcode ? ` · ${ticket.pcode}` : "") +
+    `<br><span style="font-size:11px;opacity:.75">${stateLabel(ticket)}</span>`,
     { direction: "top", offset: [0, -6] }
   );
 
@@ -73,6 +97,30 @@ function refreshPins(visibleTickets) {
   pinLayer.clearLayers();
   pinMap.clear();
   visibleTickets.forEach(renderTicketPin);
+}
+
+/**
+ * Update a single pin in-place when a ticket changes state (FE-09).
+ * Called by updateTicket() in app.js after an SSE ticket.updated event.
+ */
+function updatePin(ticket) {
+  const existing = pinMap.get(ticket.id);
+  if (!existing) {
+    // Pin not yet rendered (e.g. lat/lng arrived late)
+    renderTicketPin(ticket);
+    return;
+  }
+  existing.setStyle(pinOptions(ticket));
+  // Rebind tooltip to reflect new state label
+  existing.unbindTooltip();
+  const urgency = ticket.urgency || "info";
+  existing.bindTooltip(
+    `<strong>${ticket.adm2_name || "Unknown district"}</strong><br>` +
+    `${urgency.charAt(0).toUpperCase() + urgency.slice(1)}` +
+    (ticket.pcode ? ` · ${ticket.pcode}` : "") +
+    `<br><span style="font-size:11px;opacity:.75">${stateLabel(ticket)}</span>`,
+    { direction: "top", offset: [0, -6] }
+  );
 }
 
 document.addEventListener("DOMContentLoaded", initMap);

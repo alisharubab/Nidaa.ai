@@ -84,7 +84,9 @@ function parseNotification(notif) {
     return { endpointId, messageId, text, voice: null };
   }
 
-  if (type === "audioMessage") {
+  // audioMessage = uploaded audio file; voiceMessage = PTT voice note.
+  // Both are handled identically — download the file and convert to WAV.
+  if (type === "audioMessage" || type === "voiceMessage") {
     const url      = msgData.fileMessageData?.downloadUrl || null;
     const mimeType = msgData.fileMessageData?.mimeType    || "audio/ogg";
     if (!url) return null;

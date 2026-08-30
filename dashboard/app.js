@@ -96,10 +96,8 @@ function renderTicketCard(ticket) {
     </div>
   `;
 
-  // Click opens the detail drawer (TODO FE-07)
-  card.addEventListener("click", () => {
-    console.log("TODO(FE-07): open detail drawer for ticket", ticket.id);
-  });
+  // Click opens the detail drawer (FE-07)
+  card.addEventListener("click", () => openDrawer(ticket));
 
   return card;
 }
@@ -120,8 +118,12 @@ function updateTicket(ticket) {
   const idx = tickets.findIndex((t) => t.id === ticket.id);
   if (idx === -1) return addTicket(ticket);
   tickets[idx] = ticket;
-  applyFilters();  // re-renders stream + pins respecting active filters
+  applyFilters();
   updateCounts();
+  // FE-09: update pin style in-place without a full map redraw
+  if (typeof updatePin === "function") updatePin(ticket);
+  // FE-07: if the drawer is open on this ticket, refresh it
+  if (typeof refreshDrawer === "function") refreshDrawer(ticket);
 }
 
 function setLiveIndicator(isLive) {
@@ -206,9 +208,8 @@ function connectStream() {
     } catch { /* ignore malformed event */ }
   });
   source.addEventListener("message.status", (e) => {
-    // TODO(FE-11): surface preflight/unintelligible/failed message states
-    // in the UI per docs/UI-UX-REQUIREMENTS.md section 8.
-    console.log("message.status", JSON.parse(e.data));
+    // FE-11: surface preflight/unintelligible/failed message states in stream
+    try { addStatusCard(JSON.parse(e.data)); } catch { /* ignore malformed */ }
   });
 }
 
@@ -359,6 +360,182 @@ function checkPresentMode() {
   }
 }
 
+// --- FE-07: Detail Drawer -------------------------------------------------
+// Spec: UI-UX-REQUIREMENTS.md §6.5
+// 520px wide, paper background, --r-xl on left corners, --e-3, full height.
+// Contents: audio player, confidence waveform, transcript, entity list,
+// confidence bar + geocode badge, verdict buttons.
+
+let _drawerTicket = null;
+
+function openDrawer(ticket) {
+  _drawerTicket = ticket;
+  const scrim = document.getElementById("drawer-scrim");
+  const drawer = document.getElementById("detail-drawer");
+  if (!scrim || !drawer) return;
+
+  _renderDrawerContent(ticket);
+
+  scrim.classList.add("open");
+  drawer.classList.add("open");
+  drawer.focus();
+}
+
+function closeDrawer() {
+  _drawerTicket = null;
+  const scrim = document.getElementById("drawer-scrim");
+  const drawer = document.getElementById("detail-drawer");
+  if (scrim) scrim.classList.remove("open");
+  if (drawer) drawer.classList.remove("open");
+}
+
+// Called by updateTicket() to keep an open drawer in sync
+function refreshDrawer(ticket) {
+  if (!_drawerTicket || _drawerTicket.id !== ticket.id) return;
+  _drawerTicket = ticket;
+  _renderDrawerContent(ticket);
+}
+
+function _renderDrawerContent(ticket) {
+  const drawer = document.getElementById("detail-drawer");
+  if (!drawer) return;
+
+  const urgency  = ticket.urgency || "info";
+  const state    = verificationState(ticket);
+  const items    = parseItems(ticket.items_json);
+  const missing  = (() => { try { return JSON.parse(ticket.missing_fields || "[]"); } catch { return []; } })();
+
+  // Audio player — only rendered if modality = audio
+  const audioSection = ticket.audio_path
+    ? `<div class="drawer-section">
+        <div class="drawer-section-label">Audio</div>
+        <audio controls src="${CORE_URL}/audio/${encodeURIComponent(ticket.audio_path.split(/[\/\\]/).pop())}" class="drawer-audio"></audio>
+        ${ticket.audio_duration_s ? `<span class="drawer-audio-dur t-mono">${Math.round(ticket.audio_duration_s)}s voice note</span>` : ""}
+      </div>`
+    : "";
+
+  // Confidence waveform — bar heights proportional to extraction_conf
+  const conf  = ticket.extraction_conf ?? 0;
+  const bars  = [0.4, 0.7, 1.0, 0.9, 0.6, 0.8, 1.0, 0.7, 0.5, 0.8, 0.9, 0.6,
+                 0.4, 0.75, 1.0, 0.85, 0.5, 0.7, 0.95, 0.6]
+                .map((h) => Math.round(h * conf * 48));
+  const waveHtml = bars.map((h) =>
+    `<span class="drawer-wave-bar" style="height:${Math.max(4, h)}px"></span>`
+  ).join("");
+
+  // Transcript row
+  const transcriptSection = ticket.transcript
+    ? `<div class="drawer-section">
+        <div class="drawer-section-label">Transcript</div>
+        <div class="urdu-text drawer-transcript">${ticket.transcript}</div>
+      </div>`
+    : "";
+
+  // Extracted fields
+  const fieldsHtml = [
+    ["Location",   ticket.adm2_name ? `${ticket.adm2_name}, ${ticket.adm1_name || ""}` : `<span class='drawer-missing'>missing</span>`],
+    ["P-code",     ticket.pcode     || `<span class='drawer-missing'>—</span>`],
+    ["Intent",     ticket.intent    || "—"],
+    ["Urgency",    URGENCY_LABELS[urgency] || urgency],
+    ["Needs",      items.length ? itemsSummary(items) : `<span class='drawer-missing'>none extracted</span>`],
+    ["Affected",   ticket.people_affected > 0 ? ticket.people_affected : `<span class='drawer-missing'>unknown</span>`],
+    ["Casualties", ticket.casualties > 0 ? ticket.casualties : `<span class='drawer-missing'>none reported</span>`],
+    ["Geocode",    ticket.geocode_method || "none"],
+    ["Conf",       `${Math.round(conf * 100)}%`],
+  ].map(([k, v]) =>
+    `<div class="drawer-field"><span class="drawer-field-key">${k}</span><span class="drawer-field-val">${v}</span></div>`
+  ).join("");
+
+  const missingBadges = missing.length
+    ? `<div class="drawer-missing-row">${missing.map((f) => `<span class="drawer-missing-badge">${f}</span>`).join("")}</div>`
+    : "";
+
+  const reasoningSection = ticket.reasoning_note
+    ? `<div class="drawer-section">
+        <div class="drawer-section-label">AI Reasoning</div>
+        <div class="drawer-reasoning">${ticket.reasoning_note}</div>
+      </div>`
+    : "";
+
+  drawer.innerHTML = `
+    <div class="drawer-header">
+      <span class="ticket-urgency-badge urgency-${urgency}" style="align-self:flex-start">${URGENCY_LABELS[urgency]}</span>
+      <span class="t-title drawer-title">${ticket.adm2_name || "Unlocated"}${ticket.adm1_name ? ", " + ticket.adm1_name : ""}</span>
+      <button class="drawer-close" aria-label="Close drawer" onclick="closeDrawer()">×</button>
+    </div>
+    <div class="drawer-body">
+      ${audioSection}
+      <div class="drawer-section">
+        <div class="drawer-section-label">Confidence waveform</div>
+        <div class="drawer-waveform">${waveHtml}</div>
+        <div class="drawer-conf-bar"><div class="drawer-conf-fill" style="width:${Math.round(conf * 100)}%"></div></div>
+        <div class="drawer-conf-label t-mono-sm">${Math.round(conf * 100)}% extraction confidence · geocode: ${ticket.geocode_method || "none"}</div>
+      </div>
+      ${transcriptSection}
+      <div class="drawer-section">
+        <div class="drawer-section-label">Extracted fields</div>
+        <div class="drawer-fields">${fieldsHtml}</div>
+        ${missingBadges}
+      </div>
+      ${reasoningSection}
+    </div>
+    <div class="drawer-footer">
+      <span class="state-dot ${state}">${state === "confirmed" ? "Confirmed" : state === "disputed" ? "Disputed" : "Unconfirmed"}</span>
+      <div class="drawer-actions">
+        <button class="btn-flag" onclick="flagTicket(${ticket.id})" ${state === "disputed" ? "disabled" : ""}>Flag</button>
+        <button class="btn-ack" onclick="event.stopPropagation(); acknowledgeTicket(${ticket.id})" ${state === "confirmed" ? "disabled" : ""}>Acknowledge</button>
+      </div>
+    </div>
+  `;
+}
+
+async function flagTicket(id) {
+  try {
+    const res = await fetch(`${CORE_URL}/api/tickets/${id}/verdict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verdict: "disputed" }),
+    });
+    if (res.ok) console.log(`Ticket ${id} flagged`);
+  } catch (err) { console.error("Flag failed:", err); }
+}
+
+// --- FE-11: message.status cards in stream --------------------------------
+// Surfaces AUDIO_UNINTELLIGIBLE and preflight fail events as non-ticket cards.
+
+const statusCards = new Map(); // messageId → card element
+
+function addStatusCard(data) {
+  const stream = document.getElementById("ticket-stream");
+  if (!stream) return;
+  const emptyState = document.getElementById("empty-state");
+  if (emptyState) emptyState.remove();
+
+  const card = document.createElement("div");
+  card.className = "status-card";
+  card.dataset.msgId = data.message_id || data.sender_hash || Date.now();
+
+  const isUnintelligible = data.status === "audio_unintelligible";
+  card.innerHTML = `
+    <div class="status-card-icon">${isUnintelligible ? "🔇" : "⚠️"}</div>
+    <div class="status-card-body">
+      <div class="status-card-title">${isUnintelligible ? "Audio Unintelligible" : "Message Failed"}</div>
+      <div class="status-card-sub">${isUnintelligible
+        ? "Nidaa could not hear this. Listen yourself."
+        : data.reason || data.status || "Processing failed"}</div>
+    </div>
+  `;
+
+  // Insert below stream-header
+  const header = stream.querySelector(".stream-header");
+  if (header && header.nextSibling) {
+    stream.insertBefore(card, header.nextSibling);
+  } else {
+    stream.appendChild(card);
+  }
+  statusCards.set(card.dataset.msgId, card);
+}
+
 // --- Boot -----------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -366,4 +543,16 @@ document.addEventListener("DOMContentLoaded", () => {
   initFilterChips();
   connectStream();
   pollMetrics();
+
+  // Keyboard: Esc closes drawer; A acknowledges focused/open ticket (UI-UX §9.3)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDrawer();
+    if (e.key === "a" || e.key === "A") {
+      if (_drawerTicket) acknowledgeTicket(_drawerTicket.id);
+    }
+  });
+
+  // Scrim click closes drawer
+  const scrim = document.getElementById("drawer-scrim");
+  if (scrim) scrim.addEventListener("click", closeDrawer);
 });
