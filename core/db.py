@@ -13,11 +13,13 @@ SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 PRAGMA busy_timeout=5000;
+PRAGMA foreign_keys=ON;
 
 CREATE TABLE IF NOT EXISTS consent_ledger (
     sender_hash        TEXT PRIMARY KEY,
     phone_tail         TEXT NOT NULL,
-    state              TEXT NOT NULL DEFAULT 'pending',
+    state              TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (state IN ('pending','granted','revoked')),
     notice_sent_at     TEXT,
     granted_at         TEXT,
     revoked_at         TEXT,
@@ -27,46 +29,59 @@ CREATE TABLE IF NOT EXISTS consent_ledger (
 CREATE TABLE IF NOT EXISTS messages (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     wa_message_id      TEXT UNIQUE,
-    sender_hash        TEXT NOT NULL,
+    sender_hash        TEXT NOT NULL REFERENCES consent_ledger(sender_hash),
     phone_tail         TEXT,
-    modality           TEXT NOT NULL,
+    modality           TEXT NOT NULL CHECK (modality IN ('audio','text')),
     audio_path         TEXT,
-    audio_duration_s   REAL,
+    audio_duration_s   REAL CHECK (audio_duration_s IS NULL OR audio_duration_s > 0),
     raw_text           TEXT,
     detected_language  TEXT,
     stt_model_used     TEXT,
     stt_avg_logprob    REAL,
     stt_no_speech_prob REAL,
     stt_compression    REAL,
-    status             TEXT NOT NULL DEFAULT 'received',
+    status             TEXT NOT NULL DEFAULT 'received'
+                       CHECK (status IN ('received','preflight_failed',
+                              'transcribed','audio_unintelligible',
+                              'extracted','failed')),
     error_code         TEXT,
     t_received         TEXT NOT NULL,
     t_transcribed      TEXT,
     t_extracted        TEXT,
     t_published        TEXT,
-    ttt_ms             INTEGER
+    ttt_ms             INTEGER CHECK (ttt_ms IS NULL OR ttt_ms >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS tickets (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id         INTEGER NOT NULL REFERENCES messages(id),
-    intent             TEXT,
-    urgency            TEXT,
+    intent             TEXT CHECK (intent IS NULL OR intent IN
+                         ('resource_request','incident_report',
+                          'infrastructure_damage','non_actionable')),
+    urgency            TEXT CHECK (urgency IS NULL OR urgency IN
+                         ('critical','high','moderate','info')),
     loc_name           TEXT,
     adm2_name          TEXT,
     adm1_name          TEXT,
     pcode              TEXT,
     latitude           REAL,
     longitude          REAL,
-    geocode_method     TEXT,
-    geocode_score      REAL,
-    items_json         TEXT,
-    people_affected    INTEGER,
-    casualties         INTEGER,
-    missing_fields     TEXT,
-    extraction_conf    REAL,
+    geocode_method     TEXT CHECK (geocode_method IS NULL OR geocode_method IN
+                         ('exact','fuzzy','alias','none')),
+    geocode_score      REAL CHECK (geocode_score IS NULL OR
+                         (geocode_score >= 0 AND geocode_score <= 1)),
+    items_json         TEXT CHECK (items_json IS NULL OR json_valid(items_json)),
+    people_affected    INTEGER CHECK (people_affected IS NULL OR people_affected >= 0),
+    casualties         INTEGER CHECK (casualties IS NULL OR casualties >= 0),
+    missing_fields     TEXT CHECK (missing_fields IS NULL OR json_valid(missing_fields)),
+    extraction_conf    REAL CHECK (extraction_conf IS NULL OR
+                         (extraction_conf >= 0 AND extraction_conf <= 1)),
     reasoning_note     TEXT,
-    verification_status TEXT NOT NULL DEFAULT 'unconfirmed',
+    verification_status TEXT NOT NULL DEFAULT 'unconfirmed'
+                       CHECK (verification_status IN
+                              ('unconfirmed','user_confirmed','user_disputed')),
+    dispatcher_verdict TEXT CHECK (dispatcher_verdict IS NULL OR
+                         dispatcher_verdict IN ('verified','rejected')),
     duplicate_of       INTEGER REFERENCES tickets(id),
     readback_sent_at   TEXT,
     created_at         TEXT NOT NULL
@@ -74,8 +89,10 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 CREATE TABLE IF NOT EXISTS events (
     seq                INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind               TEXT NOT NULL,
-    payload            TEXT NOT NULL,
+    kind               TEXT NOT NULL CHECK (kind IN
+                         ('ticket.created','ticket.updated',
+                          'message.status','metrics')),
+    payload            TEXT NOT NULL CHECK (json_valid(payload)),
     created_at         TEXT NOT NULL
 );
 
@@ -96,6 +113,7 @@ def get_connection(db_path: str = DB_PATH):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
     finally:
@@ -215,9 +233,25 @@ def insert_ticket(conn, *, message_id, intent=None, urgency=None, loc_name=None,
 
 
 def update_verification(conn, ticket_id: int, verification_status: str) -> None:
+    """Sender-side only: unconfirmed|user_confirmed|user_disputed, set from
+    the 1/2 readback reply (TODO ING-10/CORE-23). Independent of
+    dispatcher_verdict below -- see docs/TRD.md section 2 verification-
+    tracking note for why these are two columns, not one."""
     conn.execute(
         "UPDATE tickets SET verification_status = ? WHERE id = ?",
         (verification_status, ticket_id),
+    )
+    append_event(conn, "ticket.updated", get_ticket(conn, ticket_id))
+    conn.commit()
+
+
+def update_dispatcher_verdict(conn, ticket_id: int, verdict: str) -> None:
+    """Dispatcher-side only: "verified"|"rejected", set from the Acknowledge/
+    Flag buttons. Independent of verification_status above -- a dispatcher
+    verdict never overwrites a sender's confirmation/dispute, or vice versa."""
+    conn.execute(
+        "UPDATE tickets SET dispatcher_verdict = ? WHERE id = ?",
+        (verdict, ticket_id),
     )
     append_event(conn, "ticket.updated", get_ticket(conn, ticket_id))
     conn.commit()

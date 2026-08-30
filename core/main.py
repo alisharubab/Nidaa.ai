@@ -16,6 +16,7 @@ import csv
 import io
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,12 +113,21 @@ def _parse_since(since: str) -> str:
     return (datetime.now(timezone.utc) - delta).isoformat()
 
 
+HUMAN_BASELINE_PATH = Path(__file__).parent.parent / "data" / "human_baseline.json"
+
+
+def _read_human_baseline_ms() -> int | None:
+    """Reads tools/baseline_stopwatch.py's output (DATA-03), if it exists."""
+    if not HUMAN_BASELINE_PATH.exists():
+        return None
+    data = json.loads(HUMAN_BASELINE_PATH.read_text(encoding="utf-8"))
+    return data.get("median_ms")
+
+
 @app.get("/api/metrics")
 async def get_metrics():
-    # TODO(DATA-03): wire human_baseline_ms from the tools/baseline_stopwatch.py
-    # output once that run has been recorded, instead of None.
     with db.get_connection() as conn:
-        return db.get_metrics(conn, human_baseline_ms=None)
+        return db.get_metrics(conn, human_baseline_ms=_read_human_baseline_ms())
 
 
 @app.get("/api/stream")
@@ -152,11 +162,10 @@ async def post_verdict(ticket_id: int, request: Request):
     verdict = body.get("verdict")
     if verdict not in ("verified", "rejected"):
         raise HTTPException(400, "verdict must be 'verified' or 'rejected'")
-    status = "dispatcher_verified" if verdict == "verified" else "dispatcher_rejected"
     with db.get_connection() as conn:
         if db.get_ticket(conn, ticket_id) is None:
             raise HTTPException(404, "ticket not found")
-        db.update_verification(conn, ticket_id, status)
+        db.update_dispatcher_verdict(conn, ticket_id, verdict)
     return {"ok": True}
 
 
@@ -200,6 +209,10 @@ async def simulate():
     # canned ticket directly. Kept minimal today so FE/ING can already test
     # against a real ticket.created SSE event.
     with db.get_connection() as conn:
+        # messages.sender_hash now has an enforced FK to consent_ledger
+        # (docs/TRD.md section 2 integrity note) -- ensure a ledger row
+        # exists for the synthetic sender before inserting its message.
+        db.check_consent(conn, "sha256:simulated", "000")
         message_id = db.insert_message(
             conn, wa_message_id=f"sim-{datetime.now().timestamp()}",
             sender_hash="sha256:simulated", phone_tail="000",
@@ -207,8 +220,10 @@ async def simulate():
         )
         ticket_id = db.insert_ticket(
             conn, message_id=message_id, intent="resource_request", urgency="critical",
-            loc_name="Dadu", adm2_name="Dadu", adm1_name="Sindh", pcode="PK602",
-            latitude=26.7306, longitude=67.7770, geocode_method="alias", geocode_score=1.0,
+            loc_name="Dadu", adm2_name="Dadu", adm1_name="Sindh", pcode="PK703",
+            # real P-code + tehsil centroid from data/pak_gazetteer.csv (DATA-01),
+            # not a placeholder -- was PK602 (guessed) before the gazetteer existed
+            latitude=26.79866641, longitude=67.77784032, geocode_method="alias", geocode_score=1.0,
             items=[{"item": "food", "qty": 20, "unit": "family"}, {"item": "water", "qty": 20, "unit": "family"}],
             people_affected=120, casualties=0, extraction_conf=0.9,
             reasoning_note="Simulated ticket via /api/simulate.",
