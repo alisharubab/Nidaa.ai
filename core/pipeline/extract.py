@@ -57,15 +57,39 @@ class ExtractionResponse(BaseModel):
     records: list[ExtractionRecord]
 
 
+_system_prompt_cache: str | None = None
+
+
+def _format_glossary(glossary: dict) -> str:
+    """Renders {"phrase": "meaning", ...} as the aligned
+    "phrase" -> meaning lines the prompt originally hardcoded, so editing
+    prompts/glossary.json (no Python) is the only thing anyone needs to
+    touch to extend it -- see docs/TRD.md section 5."""
+    if not glossary:
+        return "(none configured)"
+    quoted = [f'"{phrase}"' for phrase in glossary]
+    width = max(len(q) for q in quoted)
+    return "\n".join(
+        f"{q:<{width}} -> {meaning}"
+        for q, meaning in zip(quoted, glossary.values())
+    )
+
+
 def load_system_prompt() -> str:
     """Loads prompts/system_extract.txt and injects prompts/glossary.json
-    so a non-engineer can extend the glossary without touching Python."""
-    template = (PROMPTS_DIR / "system_extract.txt").read_text(encoding="utf-8")
-    glossary = json.loads((PROMPTS_DIR / "glossary.json").read_text(encoding="utf-8"))
-    # TODO(CORE-17): decide the exact injection point/format for glossary
-    # entries into `template` (the .txt already ships a glossary section —
-    # keep the two in sync or fold one into the other).
-    return template
+    into its {GLOSSARY} placeholder, so a non-engineer can extend the
+    glossary by editing one JSON file, never touching Python or the prompt
+    text itself. Composed once and cached -- re-reading + re-formatting
+    both files on every extract() call would be wasted I/O on the hot
+    path. Call this explicitly once at app startup (see main.py) to warm
+    the cache and fail fast on a malformed prompt/glossary file, rather
+    than discovering it on the first real message."""
+    global _system_prompt_cache
+    if _system_prompt_cache is None:
+        template = (PROMPTS_DIR / "system_extract.txt").read_text(encoding="utf-8")
+        glossary = json.loads((PROMPTS_DIR / "glossary.json").read_text(encoding="utf-8"))
+        _system_prompt_cache = template.replace("{GLOSSARY}", _format_glossary(glossary))
+    return _system_prompt_cache
 
 
 class ExtractionValidationError(Exception):

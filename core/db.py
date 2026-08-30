@@ -262,6 +262,34 @@ def get_ticket(conn, ticket_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def mark_readback_sent(conn, ticket_id: int) -> None:
+    """One-time guard, same pattern as consent_ledger.notice_sent_at --
+    ensures the readback message (CORE-22) fires once per ticket, never
+    resent on a later pipeline pass over the same ticket."""
+    conn.execute(
+        "UPDATE tickets SET readback_sent_at = ? WHERE id = ?",
+        (_now(), ticket_id),
+    )
+    conn.commit()
+
+
+def find_pending_readback_ticket(conn, sender_hash: str) -> dict | None:
+    """CORE-23: the most recent ticket belonging to this sender that has a
+    readback outstanding (sent, not yet answered) -- what a bare "1"/"2"
+    WhatsApp reply implicitly refers to, since the reply itself carries no
+    ticket id. See docs/TRD.md section 3.1's readback-reply addendum."""
+    row = conn.execute(
+        """SELECT tickets.* FROM tickets
+           JOIN messages ON tickets.message_id = messages.id
+           WHERE messages.sender_hash = ?
+             AND tickets.readback_sent_at IS NOT NULL
+             AND tickets.verification_status = 'unconfirmed'
+           ORDER BY tickets.created_at DESC LIMIT 1""",
+        (sender_hash,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def list_tickets(conn, *, urgency: list[str] | None = None, adm2: str | None = None,
                   since_iso: str | None = None) -> list[dict]:
     query = "SELECT * FROM tickets WHERE 1=1"
