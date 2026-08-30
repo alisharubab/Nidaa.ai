@@ -1,5 +1,7 @@
 # Stage 1: transcription + confidence gate + escalation. docs/TRD.md 4.3.
 
+from groq import Groq
+
 from config import GROQ_API_KEY, STT_MODEL_PRIMARY, STT_MODEL_ESCALATION
 
 NO_SPEECH_MAX = 0.60
@@ -7,16 +9,39 @@ AVG_LOGPROB_MIN = -0.90
 COMPRESSION_MAX = 2.40
 MIN_CONTENT_TOKENS = 5
 
+_client = None
+
+
+def _get_client() -> Groq:
+    global _client
+    if _client is None:
+        _client = Groq(api_key=GROQ_API_KEY)
+    return _client
+
 
 def transcribe(audio_path: str, model: str = STT_MODEL_PRIMARY) -> dict:
     """Calls Groq's Whisper endpoint with response_format=verbose_json,
-    temperature=0.0, language="ur" (hint, not hard constraint).
+    temperature=0.0, language="ur" (hint, not hard constraint). Returns a
+    plain dict (not the SDK's response object) so downstream code and the
+    DB layer don't need to know about the Groq SDK's types.
 
-    TODO(CORE-07): implement the groq.audio.transcriptions.create(...) call
-    per docs/TRD.md section 4.3 and return the parsed response including
-    per-segment avg_logprob / no_speech_prob / compression_ratio.
+    Confirmed working against real Urdu audio via CORE-05's smoke test.
     """
-    raise NotImplementedError
+    client = _get_client()
+    with open(audio_path, "rb") as f:
+        resp = client.audio.transcriptions.create(
+            file=f,
+            model=model,
+            language="ur",
+            response_format="verbose_json",
+            temperature=0.0,
+        )
+    return {
+        "text": resp.text,
+        "language": getattr(resp, "language", None),
+        "segments": getattr(resp, "segments", None) or [],
+        "model": model,
+    }
 
 
 def passes_confidence_gate(transcript_result: dict) -> bool:

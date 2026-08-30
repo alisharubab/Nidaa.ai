@@ -2,14 +2,21 @@
 # full API contract (frozen after Day 1 — do not change a route shape here
 # without updating that doc and telling your teammate).
 #
-# Day-1 status: consent, ingest intake, ticket read/verdict, metrics, and
-# HXL export are real and DB-backed. The pipeline itself (preflight -> stt
-# -> extract -> geocode -> urgency -> dedupe) is NOT wired in yet -- that's
-# Day 2 (CORE-06 through CORE-09). Until then, /internal/ingest records the
-# message and leaves it at status=received; nothing publishes a ticket for
-# it automatically. /api/simulate exists for exactly this gap: it lets the
-# other tracks (ingest, dashboard) develop and test against a real ticket
-# end-to-end without the pipeline existing yet.
+# Day-2 status: preflight -> stt -> extract now run for real, synchronously,
+# inline in the /internal/ingest request (see _run_pipeline_sync below).
+# Deliberately NOT yet in this synchronous version, all Day 3+ scope:
+#   - no queue/worker pool or rate-limit token buckets (CORE-11, Day 3)
+#   - no STT confidence gate or escalation (CORE-13/14, Day 3) -- whatever
+#     Whisper returns is accepted as-is
+#   - no geocoding (CORE-18, Day 4) -- tickets carry location_raw as
+#     loc_name only; adm2_name/adm1_name/pcode/latitude/longitude stay NULL
+#     until the real geocoder resolves them. That's correct, not missing --
+#     see hard rule 3 in ../CLAUDE.md.
+#   - no rule-blended urgency (CORE-19, Day 4) -- urgency is the model's
+#     raw value
+#   - no dedupe (CORE-20, Day 4)
+# /api/simulate still exists for injecting a fully-formed ticket (including
+# a location) without needing the geocoder that doesn't exist yet.
 
 import asyncio
 import csv
@@ -26,6 +33,8 @@ from sse_starlette.sse import EventSourceResponse
 import db
 from config import DEMO_MODE
 from events import replay_since
+from pipeline import preflight, stt
+from pipeline.extract import extract_with_fallback, ExtractionValidationError
 
 app = FastAPI(title="Nidaa-AI core")
 
@@ -71,9 +80,91 @@ async def consent_revoke(request: Request):
     return {"ok": True}
 
 
+def _run_pipeline_sync(message_id: int, t_received: str, modality: str,
+                        audio_path: str | None, text: str | None) -> None:
+    """CORE-09: preflight -> stt -> extract, synchronously, one message at a
+    time (no queue yet -- CORE-11 replaces this call site on Day 3 without
+    changing the stage functions themselves). Every exit path updates
+    `messages.status` so nothing is left silently stuck at "received"."""
+    if modality == "audio":
+        result = preflight.run_preflight(audio_path)
+        if not result["ok"]:
+            with db.get_connection() as conn:
+                db.update_message_status(conn, message_id, "preflight_failed", error_code=result["error_code"])
+            return
+
+        stt_result = stt.transcribe(audio_path)
+        transcript = stt_result["text"]
+        segments = stt_result["segments"]
+        with db.get_connection() as conn:
+            db.update_message_status(
+                conn, message_id, "transcribed", t_transcribed=_now(),
+                # raw_text = transcript once STT has run (TRD §2: "inbound
+                # text, or transcript"). Also persist the confidence signals
+                # -- needed for CORE-13's gate on Day 3, and for the
+                # dashboard's confidence badge either way; storing them here
+                # rather than discarding them after this function returns.
+                raw_text=transcript,
+                detected_language=stt_result.get("language"),
+                stt_model_used=stt_result.get("model"),
+                stt_avg_logprob=(sum(s.get("avg_logprob", 0) for s in segments) / len(segments)) if segments else None,
+                stt_no_speech_prob=max((s.get("no_speech_prob", 0) for s in segments), default=None),
+                stt_compression=max((s.get("compression_ratio", 0) for s in segments), default=None),
+            )
+        # TODO(CORE-13/14, Day 3): confidence gate + escalation belong here,
+        # between transcription and extraction. A transcript that fails the
+        # gate twice must set status=audio_unintelligible and return here,
+        # WITHOUT calling extract() below -- see hard rule 4 in ../CLAUDE.md.
+    else:
+        transcript = text or ""
+
+    try:
+        extraction = extract_with_fallback(transcript)
+    except ExtractionValidationError:
+        with db.get_connection() as conn:
+            db.update_message_status(conn, message_id, "failed", error_code="EXTRACTION_INVALID")
+        return
+
+    t_extracted = _now()
+    with db.get_connection() as conn:
+        for record in extraction["records"]:
+            db.insert_ticket(
+                conn, message_id=message_id,
+                intent=record["intent"], urgency=record["urgency"],
+                loc_name=record["location_raw"],
+                # adm2_name/adm1_name/pcode/latitude/longitude intentionally
+                # NOT set from district_guess/province_guess here -- those
+                # are the LLM's unverified guesses, not a geocoder result.
+                # Only pipeline/geocode.py (CORE-18, Day 4) may populate
+                # those columns. Until then the ticket correctly sits in
+                # the Unlocated state.
+                items=record["items"],
+                people_affected=record["people_affected"],
+                casualties=record["casualties"],
+                missing_fields=record["missing_fields"],
+                extraction_conf=record["extraction_confidence"],
+                reasoning_note=record["reasoning_note"],
+            )
+        t_published = _now()
+        ttt_ms = int((_parse_iso(t_published) - _parse_iso(t_received)).total_seconds() * 1000)
+        db.update_message_status(
+            conn, message_id, "extracted",
+            t_extracted=t_extracted, t_published=t_published, ttt_ms=ttt_ms,
+        )
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_iso(s: str) -> datetime:
+    return datetime.fromisoformat(s)
+
+
 @app.post("/internal/ingest")
 async def internal_ingest(request: Request):
     body = await request.json()
+    t_received = body.get("received_at") or _now()
     with db.get_connection() as conn:
         message_id = db.insert_message(
             conn,
@@ -84,11 +175,15 @@ async def internal_ingest(request: Request):
             audio_path=body.get("audio_path"),
             audio_duration_s=body.get("audio_duration_s"),
             raw_text=body.get("text"),
-            received_at=body.get("received_at"),
+            received_at=t_received,
         )
-    # TODO(CORE-09/CORE-11): enqueue message_id onto the PipelineQueue here
-    # once pipeline_queue.py's worker loop actually runs the pipeline
-    # stages. Today this just records the message at status=received.
+
+    _run_pipeline_sync(message_id, t_received, body["modality"], body.get("audio_path"), body.get("text"))
+
+    # Response shape is the frozen TRD 3.1 contract regardless of the fact
+    # that processing already happened synchronously above by the time we
+    # respond -- "queued"/"queue_depth" become literally accurate once
+    # CORE-11's real queue replaces _run_pipeline_sync's direct call.
     return {"message_id": message_id, "queued": True, "queue_depth": 0}
 
 
@@ -200,32 +295,41 @@ async def export_hxl():
     )
 
 
+DEFAULT_SIMULATE_TEXT = "Dadu mein bees gharon ke liye khana aur pani chahiye, halat ghair ha."
+
+
 @app.post("/api/simulate")
-async def simulate():
+async def simulate(request: Request):
     if not DEMO_MODE:
         raise HTTPException(403, "DEMO_MODE is disabled")
-    # TODO(CORE-25): replay a real gold-set message through the actual
-    # pipeline stages once they exist (Day 2+), rather than inserting a
-    # canned ticket directly. Kept minimal today so FE/ING can already test
-    # against a real ticket.created SSE event.
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass  # empty body is fine -- uses the default text below
+    text = body.get("text") or DEFAULT_SIMULATE_TEXT
+    t_received = _now()
+
+    # messages.sender_hash has an enforced FK to consent_ledger (docs/TRD.md
+    # section 2 integrity note) -- ensure a ledger row exists first.
     with db.get_connection() as conn:
-        # messages.sender_hash now has an enforced FK to consent_ledger
-        # (docs/TRD.md section 2 integrity note) -- ensure a ledger row
-        # exists for the synthetic sender before inserting its message.
         db.check_consent(conn, "sha256:simulated", "000")
         message_id = db.insert_message(
             conn, wa_message_id=f"sim-{datetime.now().timestamp()}",
             sender_hash="sha256:simulated", phone_tail="000",
-            modality="text", raw_text="[simulated] 20 khandano ke liye khana aur paani chahiye, Dadu mein.",
+            modality="text", raw_text=text, received_at=t_received,
         )
-        ticket_id = db.insert_ticket(
-            conn, message_id=message_id, intent="resource_request", urgency="critical",
-            loc_name="Dadu", adm2_name="Dadu", adm1_name="Sindh", pcode="PK703",
-            # real P-code + tehsil centroid from data/pak_gazetteer.csv (DATA-01),
-            # not a placeholder -- was PK602 (guessed) before the gazetteer existed
-            latitude=26.79866641, longitude=67.77784032, geocode_method="alias", geocode_score=1.0,
-            items=[{"item": "food", "qty": 20, "unit": "family"}, {"item": "water", "qty": 20, "unit": "family"}],
-            people_affected=120, casualties=0, extraction_conf=0.9,
-            reasoning_note="Simulated ticket via /api/simulate.",
-        )
-    return {"message_id": message_id, "ticket_id": ticket_id}
+
+    # TRD section 10: "nothing about the demo is faked, only the transport
+    # is bypassed" -- runs through the exact same _run_pipeline_sync used by
+    # /internal/ingest (CORE-09), not a canned/fabricated ticket. Since
+    # pipeline/geocode.py doesn't exist yet (CORE-18, Day 4), simulated
+    # tickets correctly land Unlocated until then -- that's honest, not a
+    # regression from the old hardcoded-Dadu-with-coordinates version.
+    _run_pipeline_sync(message_id, t_received, "text", None, text)
+
+    with db.get_connection() as conn:
+        tickets = conn.execute(
+            "SELECT id FROM tickets WHERE message_id = ?", (message_id,)
+        ).fetchall()
+    return {"message_id": message_id, "ticket_ids": [t["id"] for t in tickets]}
