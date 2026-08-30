@@ -39,9 +39,17 @@ function connectStream() {
     } catch { /* ignore */ }
   });
 
-  // FE-11: audio_unintelligible / preflight_failed surface as status cards
+  // FE-11: only actual failures surface as status cards.
+  // message.status lifecycle: received → transcribed → extracted (success),
+  // or preflight_failed / audio_unintelligible / failed (failure).
   source.addEventListener("message.status", (e) => {
-    try { addStatusCard(JSON.parse(e.data)); } catch { /* ignore */ }
+    try {
+      const data = JSON.parse(e.data);
+      const failureStatuses = ["preflight_failed", "audio_unintelligible", "failed"];
+      if (failureStatuses.includes(data.status)) {
+        addStatusCard(data);
+      }
+    } catch { /* ignore */ }
   });
 }
 
@@ -125,13 +133,14 @@ function addStatusCard(data) {
 }
 
 // Called by filters.js after any filter change so status cards hide/show
-// correctly (e.g. 'Unhearable' queue should only show audio_unintelligible).
+// correctly. Only failure cards are rendered; 'Unhearable' queue shows
+// audio_unintelligible cards, everything else shows all failure cards.
 function refreshStatusCards(activeQueue) {
   for (const card of _statusCards.values()) {
     const isUnintelligible = card.dataset.status === "audio_unintelligible";
     const show = activeQueue === "all" ||
-                 (activeQueue === "unintelligible" && isUnintelligible) ||
-                 (activeQueue === "disputed" && !isUnintelligible);
+                 activeQueue === "unintelligible" && isUnintelligible ||
+                 activeQueue === "critical"; // failure cards are high-signal, show in critical queue too
     card.style.display = show ? "" : "none";
   }
 }
