@@ -8,7 +8,7 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
-FUZZY_ACCEPT_SCORE = 85
+FUZZY_ACCEPT_SCORE = 85  # raw rapidfuzz WRatio threshold, 0-100 scale
 
 
 def load_gazetteer(path: Path = DATA_DIR / "pak_gazetteer.csv") -> list[dict]:
@@ -27,11 +27,17 @@ def geocode(location_raw: str, gazetteer: list[dict], aliases: dict) -> dict:
     """Matching cascade, in order, first hit wins:
       1. alias lookup (aliases.json)               -> method="alias",  score=1.0
       2. exact normalised match (lowercase/strip)   -> method="exact",  score=1.0
-      3. rapidfuzz.process.extractOne, WRatio >= 85 -> method="fuzzy",  score=<score>
+      3. rapidfuzz.process.extractOne, WRatio >= 85 -> method="fuzzy",  score=WRatio/100.0
       4. no match                                    -> method="none", lat/lon/pcode = None
 
     Returns {"adm2_name", "adm1_name", "pcode", "latitude", "longitude",
     "geocode_method", "geocode_score"}.
+
+    IMPORTANT: geocode_score is ALWAYS 0-1, never the raw rapidfuzz value.
+    `tickets.geocode_score` has a DB-level CHECK enforcing this (docs/TRD.md
+    section 2) -- storing a raw WRatio (0-100) here will raise
+    sqlite3.IntegrityError on insert, not silently misbehave. Divide by 100
+    before returning a fuzzy-match score.
 
     TODO(CORE-18): implement the cascade. A "none" result routes the ticket
     to the Unlocated Alerts queue and fires the location_missing reply
