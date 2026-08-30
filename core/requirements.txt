@@ -6,6 +6,7 @@ groq
 rapidfuzz
 python-dotenv
 python-multipart
+httpx        # outbound POST /internal/reply calls to ingest/ (CORE-14)
 
 # dev/build tools, not runtime deps of main.py
 openpyxl   # tools/build_gazetteer.py (DATA-01)

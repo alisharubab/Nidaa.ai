@@ -26,17 +26,7 @@ RULES
 7. urgency must be one of: critical, high, moderate, info.
 
 URDU AND ROMAN URDU GLOSSARY
-"halat ghair ha"            -> critical medical or physical emergency
-"paani ghar mein ghus gaya" -> displacement, shelter and evacuation need
-"bachay bhookay hain"       -> food request, children present, raise urgency
-"chhat gir rahi hai"        -> structural collapse risk, critical
-"doobne wale hain"          -> imminent drowning risk, critical
-"dawai khatam ho gayi"      -> medical supply request
-"raabta nahi ho raha"       -> communications blackout, treat as incident report
-"madad chahiye"             -> generic help request, infer specifics from context
-"phansay huay hain"         -> people trapped, critical
-"bijli nahi hai"            -> infrastructure damage, moderate unless combined
-                               with a medical need
+{GLOSSARY}
 
 SCHEMA
 { "records": [ { "intent": "...", "urgency": "...",
