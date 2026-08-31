@@ -52,41 +52,58 @@ def _dominant_segment(segments: list) -> dict:
     return max(segments, key=lambda s: s.get("end", 0) - s.get("start", 0))
 
 
-def passes_confidence_gate(transcript_result: dict) -> bool:
-    """Reject if ANY of: no_speech_prob > NO_SPEECH_MAX on the dominant
-    segment, mean avg_logprob < AVG_LOGPROB_MIN, compression_ratio >
-    COMPRESSION_MAX on any segment (the repetition-loop signature can
-    appear in just one segment of an otherwise-normal transcript), or
-    fewer than MIN_CONTENT_TOKENS words of actual content.
+def gate_failure_reason(transcript_result: dict) -> str | None:
+    """None if the transcript passes the confidence gate. Otherwise the
+    specific docs/TRD.md section 9 error_code: "STT_REPETITION_LOOP" if
+    the compression-ratio signature is present (checked first -- it's the
+    most specific, attributable failure mode; TRD 4.3: "must be caught,
+    because it produces long, fluent, entirely fake transcripts"),
+    otherwise the general "STT_LOW_CONFIDENCE" for any of the other three
+    conditions: no_speech_prob > NO_SPEECH_MAX on the dominant segment,
+    mean avg_logprob < AVG_LOGPROB_MIN, or fewer than MIN_CONTENT_TOKENS
+    words of actual content.
 
     "Tokens" is approximated as whitespace-split word count of the
     transcript text, not Whisper's raw token IDs -- those include
     timestamp/special tokens that aren't "content" in the sense TRD 4.3
     means (a transcript needs some actual words, not just structure).
+
+    CORE-24 hardening note: this used to be a single passes_confidence_gate
+    -> bool function. Split so the caller (main.py) can record which
+    specific error_code applies, per TRD section 9's error taxonomy --
+    previously everything that failed the gate was recorded as the same
+    generic STT_LOW_CONFIDENCE, losing the repetition-loop signal.
     """
+    segments = transcript_result.get("segments") or []
+    if segments:
+        max_compression = max(s.get("compression_ratio", 0.0) for s in segments)
+        if max_compression > COMPRESSION_MAX:
+            return "STT_REPETITION_LOOP"
+
     text = transcript_result.get("text") or ""
     if len(text.split()) < MIN_CONTENT_TOKENS:
-        return False
+        return "STT_LOW_CONFIDENCE"
 
-    segments = transcript_result.get("segments") or []
     if not segments:
         # Text without any segment metadata to gate on -- nothing to trust
         # a confidence decision against, so don't pass it by default.
-        return False
+        return "STT_LOW_CONFIDENCE"
 
     dominant = _dominant_segment(segments)
     if dominant.get("no_speech_prob", 0.0) > NO_SPEECH_MAX:
-        return False
+        return "STT_LOW_CONFIDENCE"
 
     mean_avg_logprob = sum(s.get("avg_logprob", 0.0) for s in segments) / len(segments)
     if mean_avg_logprob < AVG_LOGPROB_MIN:
-        return False
+        return "STT_LOW_CONFIDENCE"
 
-    max_compression = max(s.get("compression_ratio", 0.0) for s in segments)
-    if max_compression > COMPRESSION_MAX:
-        return False
+    return None
 
-    return True
+
+def passes_confidence_gate(transcript_result: dict) -> bool:
+    """Convenience boolean wrapper -- see gate_failure_reason() for the
+    docs/TRD.md 4.3 conditions and their section 9 error_code."""
+    return gate_failure_reason(transcript_result) is None
 
 
 def transcribe_with_escalation(audio_path: str) -> dict:
