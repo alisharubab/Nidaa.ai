@@ -96,6 +96,19 @@ function pollMetrics() {
 let _unintelligibleCount = 0;
 const _statusCards = new Map();
 
+// TRD §9 error taxonomy — human labels for the error_code carried on
+// message.status events (CORE-24 made these specific: STT_REPETITION_LOOP
+// vs STT_LOW_CONFIDENCE, RATE_LIMITED on exhausted retries).
+const ERROR_LABELS = {
+  AUDIO_TOO_SHORT:     "Recording too short",
+  AUDIO_TOO_LONG:      "Recording too long",
+  AUDIO_SILENT:        "Recording is silent",
+  STT_LOW_CONFIDENCE:  "Speech unclear — low STT confidence",
+  STT_REPETITION_LOOP: "STT repetition loop — transcript untrustworthy",
+  RATE_LIMITED:        "AI provider rate-limited, retries exhausted",
+  EXTRACTION_INVALID:  "Extraction returned invalid data",
+};
+
 function addStatusCard(data) {
   const stack = document.getElementById("status-stack");
   if (!stack) return;
@@ -114,17 +127,22 @@ function addStatusCard(data) {
   card.dataset.status = data.status || "";
 
   const isUnintelligible = data.status === "audio_unintelligible";
+  const title = isUnintelligible ? "Audio Unintelligible"
+              : data.status === "preflight_failed" ? "Preflight Failed"
+              : "Message Failed";
+  const label = ERROR_LABELS[data.error_code] || data.error_code;
+  const sub = isUnintelligible
+    ? "Nidaa could not hear this. Listen yourself."
+    : (label || "Processing failed");
+
   card.innerHTML = `
     <div class="status-card-icon">${isUnintelligible ? "🔇" : "⚠️"}</div>
     <div class="status-card-body">
-      <div class="status-card-title">
-        ${isUnintelligible ? "Audio Unintelligible" : "Message Failed"}
-      </div>
-      <div class="status-card-sub">
-        ${isUnintelligible
-          ? "Nidaa could not hear this. Listen yourself."
-          : data.reason || data.status || "Processing failed"}
-      </div>
+      <div class="status-card-title">${title}</div>
+      <div class="status-card-sub">${sub}</div>
+      ${data.error_code && isUnintelligible
+        ? `<div class="status-card-code t-mono-sm">${data.error_code}</div>`
+        : ""}
     </div>
   `;
 
