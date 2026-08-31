@@ -292,18 +292,27 @@ def find_pending_readback_ticket(conn, sender_hash: str) -> dict | None:
 
 def list_tickets(conn, *, urgency: list[str] | None = None, adm2: str | None = None,
                   since_iso: str | None = None) -> list[dict]:
-    query = "SELECT * FROM tickets WHERE 1=1"
+    # JOIN messages so the dashboard's audio player has modality/audio_path/
+    # audio_duration_s/raw_text for EVERY ticket, not just ones that arrived
+    # while the dashboard's SSE connection was open. INNER JOIN is safe here
+    # (not LEFT JOIN) because tickets.message_id is NOT NULL and enforced by
+    # a real FK (docs/TRD.md section 2 integrity note) -- every ticket
+    # always has a matching message row.
+    query = """SELECT t.*, m.modality, m.audio_path, m.audio_duration_s, m.raw_text
+               FROM tickets t
+               JOIN messages m ON t.message_id = m.id
+               WHERE 1=1"""
     params: list = []
     if urgency:
-        query += f" AND urgency IN ({','.join('?' * len(urgency))})"
+        query += f" AND t.urgency IN ({','.join('?' * len(urgency))})"
         params.extend(urgency)
     if adm2:
-        query += " AND adm2_name = ?"
+        query += " AND t.adm2_name = ?"
         params.append(adm2)
     if since_iso:
-        query += " AND created_at >= ?"
+        query += " AND t.created_at >= ?"
         params.append(since_iso)
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY t.created_at DESC"
     rows = conn.execute(query, params).fetchall()
     return [dict(r) for r in rows]
 
