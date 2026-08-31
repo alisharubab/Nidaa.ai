@@ -21,6 +21,32 @@ function openDrawer(ticket) {
   scrim.classList.add("open");
   drawer.classList.add("open");
   drawer.focus();
+  _backfillMessageFields(ticket);
+}
+
+// ticket.created / ticket.updated SSE payloads come from get_ticket(),
+// which selects the tickets table only — modality/audio_path/raw_text
+// (joined from messages in list_tickets, db.py) are missing on live
+// tickets. Fetch them lazily on first drawer open and re-render once.
+async function _backfillMessageFields(ticket) {
+  if (ticket.message_id == null || messageCache.has(ticket.message_id)) return;
+  try {
+    const res = await fetch(`${window.CORE_URL}/api/tickets`);
+    if (!res.ok) return;
+    const { tickets: list } = await res.json();
+    const full = list.find((t) => t.id === ticket.id);
+    if (!full) return;
+    messageCache.set(full.message_id, {
+      modality:         full.modality,
+      audio_path:       full.audio_path,
+      audio_duration_s: full.audio_duration_s,
+      raw_text:         full.raw_text,
+    });
+    // Re-render only if the user is still looking at this ticket
+    if (_drawerTicket && _drawerTicket.id === full.id) {
+      _renderDrawerContent(full);
+    }
+  } catch { /* core unreachable — drawer just stays without audio */ }
 }
 
 function closeDrawer() {
@@ -59,15 +85,17 @@ function _renderDrawerContent(ticket) {
   const modality   = cached.modality    || ticket.modality    || null;
   const transcript = cached.raw_text    || ticket.raw_text    || null;
 
-  // Audio section
+  // Audio section. Three cases: player when we have the path, a loading
+  // hint when the backfill fetch is still in flight (modality unknown),
+  // and a genuine not-available note when the path is missing.
   const audioSection = (modality === "audio" && audioPath)
     ? `<div class="drawer-section">
         <div class="drawer-section-label">Audio</div>
         <audio controls
           src="${window.CORE_URL}/audio/${encodeURIComponent(audioPath.split(/[\/\\]/).pop())}"
           class="drawer-audio"></audio>
-        ${cached.audio_duration_s
-          ? `<span class="drawer-audio-dur t-mono">${Math.round(cached.audio_duration_s)}s voice note</span>`
+        ${(cached.audio_duration_s || ticket.audio_duration_s)
+          ? `<span class="drawer-audio-dur t-mono">${Math.round(cached.audio_duration_s || ticket.audio_duration_s)}s voice note</span>`
           : ""}
       </div>`
     : modality === "audio" && !audioPath
@@ -75,7 +103,12 @@ function _renderDrawerContent(ticket) {
           <div class="drawer-section-label">Audio</div>
           <div class="drawer-no-audio">Audio file not available — path not returned by API</div>
         </div>`
-      : "";
+      : modality == null && ticket.message_id != null
+        ? `<div class="drawer-section">
+            <div class="drawer-section-label">Audio</div>
+            <div class="drawer-no-audio">Loading message details…</div>
+          </div>`
+        : "";
 
   // Confidence waveform bars scaled to extraction_conf
   const waveHeights = [0.4,0.7,1.0,0.9,0.6,0.8,1.0,0.7,0.5,0.8,0.9,0.6,
