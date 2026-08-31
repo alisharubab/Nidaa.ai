@@ -2,15 +2,15 @@
 # full API contract (frozen after Day 1 — do not change a route shape here
 # without updating that doc and telling your teammate).
 #
-# Day-4 status: the full pipeline is now wired end to end -- preflight ->
-# stt (gate + escalation) -> extract -> geocode -> urgency-blend -> dedupe,
-# through the Day-3 async worker pool. Gazetteer/aliases/system-prompt
+# Status: the full pipeline is wired end to end -- preflight -> stt (gate +
+# escalation) -> extract -> geocode -> urgency-blend -> dedupe -> readback
+# trigger, through the async worker pool. Gazetteer/aliases/system-prompt
 # (with the glossary baked in) are loaded once at startup, not per-message.
-#
-# Deliberately NOT yet wired, remaining Day 4/5 scope:
-#   - no readback trigger (CORE-22) or 1/2 reply handling (CORE-23) --
-#     those need a new contract addition, tracked separately, not done yet
-#   - no burst/acoustic test hardening pass (CORE-24, Day 5)
+# Confidence-gated error taxonomy hardened (CORE-24): STT_REPETITION_LOOP
+# vs STT_LOW_CONFIDENCE, RATE_LIMITED on exhausted retries. Dashboard audio
+# player support: list_tickets() now joins messages (db.py) and /audio/*
+# is a static mount onto storage/audio/, so historical (not just
+# just-arrived-via-SSE) tickets can play their source recording.
 
 import asyncio
 import csv
@@ -19,10 +19,12 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import groq
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 import db
@@ -45,6 +47,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serves storage/audio/*.wav directly so the dashboard's audio player can
+# fetch a ticket's source recording. Path is relative to core/'s cwd (where
+# uvicorn is run from), same convention as ingest/'s own audio_path values.
+app.mount("/audio", StaticFiles(directory="../storage/audio"), name="audio")
 
 pipeline_queue: PipelineQueue | None = None
 district_index: dict = {}
@@ -167,19 +174,34 @@ async def _run_pipeline(message_id: int) -> None:
                 db.update_message_status(conn, message_id, "preflight_failed", error_code=preflight_result["error_code"])
             return
 
-        result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_PRIMARY)
-        escalated = False
-        if not stt.passes_confidence_gate(result):
-            escalated = True
-            result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_ESCALATION)
+        try:
+            result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_PRIMARY)
+            escalated = False
+            if not stt.passes_confidence_gate(result):
+                escalated = True
+                result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_ESCALATION)
+        except groq.APIError:
+            # CORE-24: call_with_retry already exhausted 3 attempts with
+            # backoff (docs/TRD.md 4.1) -- this is Groq itself being down
+            # or persistently rate-limited, not a one-off blip. RATE_LIMITED
+            # is the taxonomy's only code for "any API" exhaustion (TRD
+            # section 9); this used to fall through to the queue's generic
+            # PIPELINE_ERROR catch-all, losing the specific reason.
+            with db.get_connection() as conn:
+                db.update_message_status(conn, message_id, "failed", error_code="RATE_LIMITED")
+            return
 
-        gate_passed = stt.passes_confidence_gate(result)
+        gate_failure = stt.gate_failure_reason(result)
+        gate_passed = gate_failure is None
         transcript = result["text"]
         with db.get_connection() as conn:
             db.update_message_status(
                 conn, message_id,
                 "transcribed" if gate_passed else "audio_unintelligible",
-                error_code=None if gate_passed else "STT_LOW_CONFIDENCE",
+                # CORE-24: distinguishes STT_REPETITION_LOOP from the
+                # general STT_LOW_CONFIDENCE (TRD section 9) instead of
+                # collapsing every gate failure into one generic code.
+                error_code=gate_failure,
                 t_transcribed=_now(),
                 raw_text=transcript,
                 detected_language=result.get("language"),
@@ -207,6 +229,13 @@ async def _run_pipeline(message_id: int) -> None:
     except ExtractionValidationError:
         with db.get_connection() as conn:
             db.update_message_status(conn, message_id, "failed", error_code="EXTRACTION_INVALID")
+        return
+    except groq.APIError:
+        # CORE-24: same reasoning as the STT try/except above -- retries
+        # already exhausted, this is Groq being unavailable, not bad model
+        # output (that's ExtractionValidationError, handled separately).
+        with db.get_connection() as conn:
+            db.update_message_status(conn, message_id, "failed", error_code="RATE_LIMITED")
         return
 
     t_extracted = _now()
