@@ -1,15 +1,18 @@
 /* Design tokens from docs/UI-UX-REQUIREMENTS.md. Keep this file the single
-   source of truth for tokens -- don't hardcode hex values elsewhere. */
+   source of truth for tokens -- don't hardcode hex values elsewhere.
+   Image-2 redesign: soft slate page (#F8FAFC), crisp white cards (#FFFFFF),
+   teal brand accent kept; urgency ramp unchanged so map pins stay in sync. */
 
 :root {
   /* Colour */
-  --mist: #EBF1F4;
-  --paper: #FCFDFE;
-  --paper-sunk: #F4F8FA;
-  --ink: #0A2530;
-  --ink-2: #40606C;
-  --silt: #8CA3AD;
-  --line: #DCE6EB;
+  --mist: #F8FAFC;            /* page background (slate-50) */
+  --paper: #FFFFFF;           /* cards (crisp white) */
+  --paper-sunk: #F1F5F9;      /* wells: player bg, transcript bg (slate-100) */
+  --ink: #0F172A;
+  --ink-2: #475569;
+  --ink-3: #64748B;
+  --silt: #94A3B8;
+  --line: #E2E8F0;
   --indus: #0D6E80;
   --indus-deep: #073B47;
   --indus-wash: #DFF0F3;
@@ -20,6 +23,15 @@
   --marigold-wash: #FDF0DA;
   --reed: #1E7A5A;
   --reed-wash: #DFF2EA;
+  --bar-idle: #CBD5E1;        /* waveform bars not yet played */
+
+  /* Relief-badge palette (colourful supply chips on voice cards) */
+  --badge-food-bg: #DCFCE7;    --badge-food-fg: #166534;
+  --badge-water-bg: #E0F2FE;   --badge-water-fg: #075985;
+  --badge-med-bg: #FEE2E2;     --badge-med-fg: #B91C1C;
+  --badge-boat-bg: #CFFAFE;    --badge-boat-fg: #155E75;
+  --badge-blanket-bg: #FEF3C7; --badge-blanket-fg: #B45309;
+  --badge-shelter-bg: #FFEDD5; --badge-shelter-fg: #C2410C;
 
   /* Radius */
   --r-xs: 4px;
@@ -30,10 +42,10 @@
   --r-full: 999px;
 
   /* Elevation */
-  --e-1: 0 1px 2px rgba(10,37,48,.06), 0 1px 1px rgba(10,37,48,.04);
-  --e-2: 0 2px 6px rgba(10,37,48,.07), 0 8px 20px rgba(10,37,48,.05);
-  --e-3: 0 4px 12px rgba(10,37,48,.08), 0 18px 44px rgba(10,37,48,.08);
-  --e-glass: 0 2px 8px rgba(10,37,48,.06), 0 20px 50px rgba(7,59,71,.10);
+  --e-1: 0 1px 2px rgba(15,23,42,.05), 0 1px 1px rgba(15,23,42,.03);
+  --e-2: 0 2px 6px rgba(15,23,42,.06), 0 8px 20px rgba(15,23,42,.05);
+  --e-3: 0 4px 12px rgba(15,23,42,.08), 0 18px 44px rgba(15,23,42,.08);
+  --e-glass: 0 2px 8px rgba(15,23,42,.06), 0 20px 50px rgba(7,59,71,.10);
 
   /* Motion (docs/UI-UX-REQUIREMENTS.md section 7) */
   --surge: cubic-bezier(0.22, 1.00, 0.36, 1.00);
@@ -74,23 +86,11 @@ body {
   font-weight: 600; letter-spacing: -0.015em;
 }
 
-.t-body-l {
-  font-size: 16px; line-height: 24px;
-}
-
-.t-body-s {
-  font-size: 13px; line-height: 18px;
-}
+.t-body-s { font-size: 13px; line-height: 18px; }
 
 .t-caption {
   font-size: 12px; line-height: 16px;
   letter-spacing: 0.01em; color: var(--ink-2);
-}
-
-.t-label {
-  font-size: 11px; line-height: 12px;
-  font-weight: 600; letter-spacing: 0.09em;
-  text-transform: uppercase; color: var(--ink-2);
 }
 
 .t-mono {
@@ -110,24 +110,24 @@ body {
   direction: rtl; text-align: right;
 }
 
-/* --- App shell grid (docs/UI-UX-REQUIREMENTS.md section 5.1) ------------- */
+/* --- App shell grid — two-column layout (image-2 redesign) --------------- */
 
 .app-shell {
   display: grid;
-  grid-template-columns: 260px 1fr 420px;
-  grid-template-rows: 72px 1fr;
+  grid-template-columns: minmax(560px, 1fr) 440px;
+  grid-template-rows: 84px 1fr;
   grid-template-areas:
-    "header header header"
-    "left   map     stream";
+    "header header"
+    "map    stream";
   height: 100vh;
 }
 
-/* --- Header, 72px -------------------------------------------------------- */
+/* --- Header -------------------------------------------------------------- */
 
 .header {
   grid-area: header;
   background: var(--paper);
-  box-shadow: var(--e-1);
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   gap: 24px;
@@ -136,7 +136,7 @@ body {
 }
 
 .brand {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: baseline; gap: 10px;
   flex-shrink: 0;
 }
 
@@ -152,30 +152,83 @@ body {
   margin-left: -4px; vertical-align: super;
 }
 
-.header-ttt {
-  flex: 1; display: flex; align-items: baseline; gap: 16px;
-  min-width: 0;
+.brand-sub {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--silt);
 }
 
-.ttt-label-group {
+.header-right {
+  display: flex; align-items: center; gap: 16px;
+  flex-shrink: 0;
+}
+
+/* --- Time-to-Triage arc speedometer (UI-UX §1.3, image-2) ---------------- */
+
+.ttt-widget {
+  display: flex; align-items: center; gap: 16px;
+  margin-left: auto; margin-right: auto;
+}
+
+.ttt-arc { display: block; flex-shrink: 0; }
+
+.ttt-arc-track {
+  fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round;
+}
+
+.ttt-arc-fill {
+  fill: none; stroke: var(--indus); stroke-width: 3; stroke-linecap: round;
+}
+
+.ttt-arc-tick { stroke: var(--silt); stroke-width: 1.5; }
+
+.ttt-arc-dot {
+  fill: var(--marigold-bright); stroke: #fff; stroke-width: 1.5;
+  /* the dot slides as new tickets land (UI-UX §7.2 step 4) */
+  transition: cx 500ms var(--surge), cy 500ms var(--surge);
+}
+
+.ttt-arc-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8.5px; fill: var(--silt);
+}
+
+.ttt-figures {
   display: flex; flex-direction: column; gap: 2px;
 }
 
-.ttt-label {
+.ttt-big-row {
+  display: flex; align-items: baseline; gap: 8px;
+}
+
+.ttt-big {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 26px; font-weight: 700; line-height: 28px;
+  letter-spacing: -0.02em; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ttt-big-unit {
   font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
   text-transform: uppercase; color: var(--silt);
 }
 
+.ttt-caption {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--silt);
+}
+
+.ttt-sub {
+  font-size: 12px; color: var(--ink-2);
+}
+
 .ttt-value {
   font-family: "IBM Plex Mono", monospace;
-  font-size: 14px; color: var(--ink-2);
+  font-size: 11.5px; color: var(--ink-3);
 }
 
-.ttt-value strong {
-  color: var(--indus-deep); font-weight: 500;
-}
+.ttt-value strong { color: var(--indus-deep); font-weight: 500; }
 
-/* TODO(FE-08): replace with the thin 3px arc per UI-UX §1.3 */
+/* --- Live indicator ------------------------------------------------------ */
 
 .live-indicator {
   display: flex; align-items: center; gap: 6px;
@@ -196,72 +249,23 @@ body {
   50% { opacity: 0.4; }
 }
 
-/* --- Left rail, 260px (docs/UI-UX-REQUIREMENTS.md §5.1) ----------------- */
+/* --- HXL export button (header) ------------------------------------------ */
 
-.rail-left {
-  grid-area: left;
-  background: var(--paper);
-  border-right: 1px solid var(--line);
-  padding: 16px;
-  overflow-y: auto;
-  display: flex; flex-direction: column; gap: 24px;
-}
-
-.rail-section-title {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
-  text-transform: uppercase; color: var(--silt);
-  margin-bottom: 8px;
-}
-
-/* Queue nav items */
-.queue-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; border-radius: var(--r-m);
-  cursor: pointer; transition: background 120ms var(--snap);
-  border: none; background: none; width: 100%; text-align: left;
-  font-family: inherit; font-size: 14px; color: var(--ink);
-}
-
-.queue-item:hover { background: var(--paper-sunk); }
-.queue-item.active { background: var(--indus-wash); color: var(--indus-deep); font-weight: 600; }
-
-.queue-count {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 13px; color: var(--ink-2);
-}
-
-.queue-item.active .queue-count { color: var(--indus); }
-
-/* District totals (placeholder for Day 4 data) */
-.district-totals {
-  display: flex; flex-direction: column; gap: 4px;
-}
-
-.district-row {
-  display: flex; justify-content: space-between;
-  padding: 4px 0; font-size: 13px; color: var(--ink-2);
-}
-
-.district-row span:last-child {
-  font-family: "IBM Plex Mono", monospace;
-}
-
-/* HXL export button */
 .btn-export {
-  display: flex; align-items: center; justify-content: center;
-  gap: 6px; padding: 10px 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; padding: 0 14px; height: 32px;
   background: var(--indus); color: white;
-  border: none; border-radius: var(--r-m);
+  border: none; border-radius: var(--r-s);
   font-family: "Public Sans", sans-serif;
-  font-size: 13px; font-weight: 600;
+  font-size: 12.5px; font-weight: 600;
   cursor: pointer; transition: background 120ms, transform 60ms;
-  margin-top: auto;
 }
 
 .btn-export:hover { background: var(--indus-deep); }
 .btn-export:active { transform: scale(0.98); }
+.btn-export:focus-visible { outline: 2px solid var(--indus); outline-offset: 2px; }
 
-/* --- Map container (docs/UI-UX-REQUIREMENTS.md §5.1/6.4) --------------- */
+/* --- Map column — the hero (UI-UX §5.1/6.4) ------------------------------ */
 
 .map-container {
   grid-area: map;
@@ -269,39 +273,39 @@ body {
   margin: 16px;
   border-radius: var(--r-xl);
   border: 1px solid var(--line);
+  background: var(--paper);
+  box-shadow: var(--e-1);
   overflow: hidden;
 }
 
-#map {
-  width: 100%;
-  height: 100%;
-}
+#map { width: 100%; height: 100%; }
 
-/* Desaturate tiles so urgency pins are the loudest thing (UI-UX §6.4) */
-.leaflet-tile-pane { filter: saturate(0.55) brightness(1.08) contrast(0.94); }
+/* Positron is already a quiet basemap — just a whisper of desaturation so
+   the urgency pins stay the loudest thing on the map (UI-UX §6.4). */
+.leaflet-tile-pane { filter: saturate(0.85) brightness(1.02) contrast(0.98); }
 
-/* Glass filter bar floating over the map (placeholder for FE-05 chips) */
+/* Glass filter bar floating over the map */
 .filter-bar {
   position: absolute; top: 16px; left: 16px; right: 16px;
   z-index: 1000;
   display: flex; gap: 8px; align-items: center;
   padding: 8px 16px;
-  background: rgba(252, 253, 254, 0.72);
+  background: rgba(255, 255, 255, 0.78);
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid rgba(220, 230, 235, 0.75);
+  border: 1px solid rgba(226, 232, 240, 0.85);
   box-shadow: var(--e-glass);
   border-radius: var(--r-l);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
   .filter-bar {
-    background: rgba(252, 253, 254, 0.96);
+    background: rgba(255, 255, 255, 0.96);
     box-shadow: var(--e-2);
   }
 }
 
-/* Filter chips — minimal Day-1 placeholder; full logic in FE-05 */
+/* Filter chips */
 .filter-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 12px; height: 32px;
@@ -335,10 +339,10 @@ body {
 .map-legend {
   position: absolute; bottom: 16px; left: 16px; z-index: 1000;
   padding: 12px 16px;
-  background: rgba(252, 253, 254, 0.72);
+  background: rgba(255, 255, 255, 0.78);
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid rgba(220, 230, 235, 0.75);
+  border: 1px solid rgba(226, 232, 240, 0.85);
   box-shadow: var(--e-glass);
   border-radius: var(--r-l);
 }
@@ -348,44 +352,32 @@ body {
   font-size: 12px; color: var(--ink-2); padding: 2px 0;
 }
 
-.legend-pin {
-  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
-}
-
+.legend-pin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .legend-pin.solid { background: var(--indus); }
 .legend-pin.hollow { background: transparent; border: 2px solid var(--indus); }
 .legend-pin.disputed { background: var(--vermilion); box-shadow: 0 0 0 2px var(--vermilion-wash); }
 .legend-pin.none { background: var(--silt); opacity: 0.5; }
 
-/* --- Right rail / ticket stream ------------------------------------------ */
+/* --- Live Feed column (image-2) ------------------------------------------ */
 
 .rail-stream {
   grid-area: stream;
-  background: var(--paper-sunk);
-  padding: 16px;
+  padding: 16px 16px 16px 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.status-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.ticket-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-}
-
 .stream-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding-bottom: 8px;
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 2px;
+}
+
+.stream-title {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .stream-count {
@@ -393,9 +385,45 @@ body {
   font-size: 12px; color: var(--silt);
 }
 
-/* --- Ticket card (docs/UI-UX-REQUIREMENTS.md section 6.2) -------------- */
+/* Queue chips (was the left rail — filters.js targets these ids/classes) */
+.queue-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  flex-shrink: 0;
+}
 
-/* --- Ticket arrival animation (UI-UX §7.2) ----------------------------- */
+.queue-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px;
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  cursor: pointer; transition: all 120ms var(--snap);
+  font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+}
+
+.queue-item:hover { border-color: rgba(13, 110, 128, 0.45); color: var(--ink); }
+
+.queue-item.active {
+  background: var(--indus); border-color: var(--indus); color: white; font-weight: 600;
+}
+
+.queue-count {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; color: var(--silt);
+}
+
+.queue-item.active .queue-count { color: rgba(255,255,255,0.85); }
+
+.status-stack {
+  display: flex; flex-direction: column; gap: 10px;
+  flex-shrink: 0;
+}
+
+.ticket-list {
+  display: flex; flex-direction: column; gap: 12px;
+  flex: 1;
+}
+
+/* --- Ticket card — live voice card (image-2, UI-UX §6.2 basis) ---------- */
 
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-8px); }
@@ -409,7 +437,6 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   box-shadow: var(--e-1);
-  padding: 0;
   cursor: pointer;
   transition: box-shadow 160ms var(--snap), transform 160ms var(--snap);
   overflow: hidden;
@@ -426,18 +453,39 @@ body {
 }
 
 .ticket-body {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 12px 12px 12px 15px; /* 15px = 12px + 3px urgency bar */
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 14px 16px 12px 19px; /* 19px = 16px + 3px urgency bar */
 }
 
 .ticket-top {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+}
+
+.ticket-head-left {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+
+.ticket-district {
+  font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ticket-loc-sub {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px; color: var(--silt); letter-spacing: 0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ticket-head-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  flex-shrink: 0;
 }
 
 .ticket-urgency-badge {
   display: inline-flex; align-items: center;
-  padding: 2px 8px; border-radius: var(--r-full);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+  padding: 2px 9px; border-radius: var(--r-full);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -448,49 +496,53 @@ body {
 
 .ticket-time {
   font-family: "IBM Plex Mono", monospace;
-  font-size: 11px; color: var(--silt);
+  font-size: 10.5px; color: var(--silt);
+  white-space: nowrap;
 }
 
-.ticket-location {
-  display: flex; align-items: baseline; gap: 8px;
-}
-
-.ticket-district {
-  font-size: 16px; font-weight: 600; color: var(--ink);
-}
-
-.ticket-pcode {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px; color: var(--silt);
-}
-
+/* Structured English summary line (pairs with the transcript for the
+   card's dual-script presentation) */
 .ticket-summary {
   font-size: 13px; line-height: 18px; color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Transcript — script-aware */
+.ticket-transcript.latin-text {
+  font-size: 13.5px; line-height: 19px; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.ticket-transcript.urdu-text {
+  font-size: 16px; line-height: 1.9;
   display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
 }
 
-/* Waveform placeholder (full Confidence Waveform in FE-07/FE-09) */
-.ticket-waveform {
-  height: 24px; display: flex; align-items: center; gap: 2px;
-  padding-top: 4px;
+/* Relief supply badges — Food 🍲 / Boats 🚤 / Medical 💊 ... */
+.ticket-items {
+  display: flex; flex-wrap: wrap; gap: 6px;
 }
 
-.waveform-bar {
-  width: 3px; border-radius: var(--r-xs);
-  background: var(--indus);
+.item-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: var(--r-full);
+  font-size: 11.5px; font-weight: 600; line-height: 16px;
 }
 
-.waveform-duration {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px; color: var(--silt);
-  margin-left: auto;
-}
+.item-food     { background: var(--badge-food-bg);     color: var(--badge-food-fg); }
+.item-water    { background: var(--badge-water-bg);    color: var(--badge-water-fg); }
+.item-med      { background: var(--badge-med-bg);      color: var(--badge-med-fg); }
+.item-boat     { background: var(--badge-boat-bg);     color: var(--badge-boat-fg); }
+.item-blanket  { background: var(--badge-blanket-bg);  color: var(--badge-blanket-fg); }
+.item-shelter  { background: var(--badge-shelter-bg);  color: var(--badge-shelter-fg); }
+.item-other    { background: var(--paper-sunk);        color: var(--ink-2); }
 
 /* Ticket footer: state + action */
 .ticket-footer {
   display: flex; align-items: center; justify-content: space-between;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .state-dot {
@@ -504,10 +556,7 @@ body {
   border: 2px solid var(--silt); /* hollow = unconfirmed */
 }
 
-.state-dot.confirmed::before {
-  background: var(--reed); border-color: var(--reed);
-}
-
+.state-dot.confirmed::before { background: var(--reed); border-color: var(--reed); }
 .state-dot.disputed::before {
   background: var(--vermilion); border-color: var(--vermilion);
   box-shadow: 0 0 0 2px var(--vermilion-wash);
@@ -524,15 +573,11 @@ body {
 .urgency-moderate::before { background: var(--indus); }
 .urgency-info::before { background: var(--silt); }
 
-/* Row tints for urgency (UI-UX §2.2) */
-.urgency-critical .ticket-body { background: var(--vermilion-wash); }
-.urgency-high .ticket-body { background: var(--marigold-wash); }
-
-/* Acknowledge button (UI-UX §6.8) */
+/* Acknowledge action (UI-UX §6.8) */
 .btn-ack {
-  padding: 4px 12px; height: 28px;
+  padding: 4px 14px; height: 28px;
   background: var(--indus); color: white;
-  border: none; border-radius: var(--r-m);
+  border: none; border-radius: var(--r-s);
   font-size: 12px; font-weight: 600;
   cursor: pointer; transition: background 120ms, transform 60ms;
 }
@@ -540,8 +585,54 @@ body {
 .btn-ack:hover { background: var(--indus-deep); }
 .btn-ack:active { transform: scale(0.98); }
 .btn-ack:focus-visible { outline: 2px solid var(--indus); outline-offset: 2px; }
+.btn-ack:disabled { opacity: 1; pointer-events: none; }
 
-/* --- Empty state (docs/UI-UX-REQUIREMENTS.md section 8) ---------------- */
+.btn-ack.acked {
+  background: var(--reed-wash); color: var(--reed);
+}
+
+/* --- Voice player (player.js) — the playable waveform ------------------- */
+
+.voice-player {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--paper-sunk);
+  border-radius: var(--r-m);
+  padding: 7px 10px;
+  transition: opacity 160ms var(--snap);
+}
+
+.voice-player.unavailable { opacity: 0.55; }
+
+.vp-btn {
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--indus); color: white;
+  border: none; border-radius: 50%;
+  cursor: pointer; transition: background 120ms, transform 60ms;
+}
+
+.vp-btn:hover { background: var(--indus-deep); }
+.vp-btn:active { transform: scale(0.94); }
+.vp-btn:disabled { background: var(--silt); cursor: default; }
+.vp-btn:focus-visible { outline: 2px solid var(--indus); outline-offset: 2px; }
+
+.vp-icon-pause { display: none; }
+.voice-player.playing .vp-icon-play { display: none; }
+.voice-player.playing .vp-icon-pause { display: block; }
+
+.vp-wave {
+  flex: 1; min-width: 0; height: 36px;
+  cursor: pointer;
+}
+
+.vp-time {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px; color: var(--silt);
+  flex-shrink: 0; min-width: 36px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Empty state (docs/UI-UX-REQUIREMENTS.md section 8) ----------------- */
 
 .empty-state {
   display: flex; flex-direction: column;
@@ -578,7 +669,7 @@ body {
   color: var(--silt);
 }
 
-/* --- Reduced motion (docs/UI-UX-REQUIREMENTS.md §7.3) ----------------- */
+/* --- Reduced motion (docs/UI-UX-REQUIREMENTS.md §7.3) ------------------- */
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -587,19 +678,32 @@ body {
   }
 }
 
-/* --- Presentation mode (docs/UI-UX-REQUIREMENTS.md §10) ---------------- */
+/* --- Presentation mode (docs/UI-UX-REQUIREMENTS.md §10) ----------------- */
 
-body.present-mode {
-  font-size: 15.7px; /* +12% */
+body.present-mode { font-size: 15.7px; /* +12% */ }
+
+/* --- Responsive fallback: stack map over feed on narrow screens ---------- */
+
+@media (max-width: 1080px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 84px 46vh 1fr;
+    grid-template-areas:
+      "header"
+      "map"
+      "stream";
+    height: auto;
+    min-height: 100vh;
+  }
+  .rail-stream { padding: 16px; }
+  .ttt-widget { display: none; } /* header stays uncluttered on small screens */
 }
 
-body.present-mode .hairline { border-width: 1.5px; }
-
-/* --- FE-07: Detail Drawer (UI-UX §6.5) --------------------------------- */
+/* --- FE-07: Detail Drawer (UI-UX §6.5) ---------------------------------- */
 
 .drawer-scrim {
   position: fixed; inset: 0;
-  background: rgba(10, 37, 48, 0.24);
+  background: rgba(15, 23, 42, 0.28);
   z-index: 1000; /* above Leaflet's max z-index (~600) */
   opacity: 0; pointer-events: none;
   transition: opacity 200ms var(--settle);
@@ -622,9 +726,7 @@ body.present-mode .hairline { border-width: 1.5px; }
   overflow: hidden;
 }
 
-.detail-drawer.open {
-  transform: translateX(0);
-}
+.detail-drawer.open { transform: translateX(0); }
 
 .drawer-header {
   display: flex; flex-direction: column; gap: 6px;
@@ -642,9 +744,7 @@ body.present-mode .hairline { border-width: 1.5px; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.drawer-pcode {
-  font-size: 11px; color: var(--silt);
-}
+.drawer-pcode { font-size: 11px; color: var(--silt); }
 
 .drawer-close {
   width: 32px; height: 32px;
@@ -673,15 +773,8 @@ body.present-mode .hairline { border-width: 1.5px; }
 
 .drawer-section { display: flex; flex-direction: column; }
 
-/* Audio player */
-.drawer-audio {
-  width: 100%; height: 36px;
-  border-radius: var(--r-m);
-  accent-color: var(--indus);
-}
-
 .drawer-audio-dur {
-  font-size: 11px; color: var(--silt); margin-top: 4px;
+  font-size: 11px; color: var(--silt); margin-top: 6px;
 }
 
 /* Confidence waveform */
@@ -706,9 +799,7 @@ body.present-mode .hairline { border-width: 1.5px; }
   transition: width 400ms var(--surge);
 }
 
-.drawer-conf-label {
-  color: var(--silt); margin-top: 4px;
-}
+.drawer-conf-label { color: var(--silt); margin-top: 4px; }
 
 /* Transcript */
 .drawer-transcript {
@@ -717,9 +808,7 @@ body.present-mode .hairline { border-width: 1.5px; }
 }
 
 /* Extracted fields definition list */
-.drawer-fields {
-  display: flex; flex-direction: column; gap: 4px;
-}
+.drawer-fields { display: flex; flex-direction: column; gap: 4px; }
 
 .drawer-field {
   display: flex; align-items: baseline;
@@ -735,9 +824,7 @@ body.present-mode .hairline { border-width: 1.5px; }
   flex-shrink: 0; width: 80px;
 }
 
-.drawer-field-val {
-  font-size: 13px; color: var(--ink); flex: 1;
-}
+.drawer-field-val { font-size: 13px; color: var(--ink); flex: 1; }
 
 .drawer-missing { color: var(--silt); font-style: italic; }
 
@@ -751,7 +838,7 @@ body.present-mode .hairline { border-width: 1.5px; }
   font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
 }
 
-/* Urgency badge variants (used in drawer header, ticket card, and status cards) */
+/* Urgency badge variants (drawer header) */
 .urgency-critical-badge { background: var(--vermilion-wash); color: var(--vermilion); }
 .urgency-high-badge     { background: var(--marigold-wash);  color: var(--marigold); }
 .urgency-moderate-badge { background: var(--indus-wash);     color: var(--indus); }
@@ -782,7 +869,7 @@ body.present-mode .hairline { border-width: 1.5px; }
 .btn-flag {
   padding: 4px 12px; height: 28px;
   background: transparent; color: var(--vermilion);
-  border: 1px solid var(--vermilion); border-radius: var(--r-m);
+  border: 1px solid var(--vermilion); border-radius: var(--r-s);
   font-size: 12px; font-weight: 600;
   cursor: pointer; transition: background 120ms, transform 60ms;
 }
@@ -790,15 +877,17 @@ body.present-mode .hairline { border-width: 1.5px; }
 .btn-flag:hover { background: var(--vermilion-wash); }
 .btn-flag:active { transform: scale(0.98); }
 .btn-flag:disabled { opacity: 0.4; pointer-events: none; }
-.btn-ack:disabled { opacity: 0.4; pointer-events: none; }
+.btn-ack:disabled { opacity: 1; pointer-events: none; }
 
-/* --- FE-11: message.status cards (UI-UX §8) ---------------------------- */
+/* --- FE-11: message.status cards (UI-UX §8) ----------------------------- */
 
 .status-card {
   display: flex; align-items: flex-start; gap: 12px;
-  background: var(--marigold-wash);
-  border: 1px solid rgba(184, 110, 12, 0.20);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--marigold-bright);
   border-radius: var(--r-l);
+  box-shadow: var(--e-1);
   padding: 12px 14px;
   animation: slide-in 300ms var(--surge) both;
 }
