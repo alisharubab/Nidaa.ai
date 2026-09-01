@@ -1,8 +1,9 @@
-"""FE-10: offline OSM tile cache for the demo bounding box.
+"""FE-10: offline tile cache for the demo bounding box.
 
-Downloads zoom 6-9 OpenStreetMap raster tiles covering Sindh / South
-Punjab into dashboard/tiles/{z}/{x}/{y}.png so the pitch demo map renders
-with no internet (REL-03 airplane-mode rehearsal, DoD item 10).
+Downloads zoom 6-9 CartoDB Positron raster tiles (light basemap, crisp
+English labels) covering Sindh / South Punjab into dashboard/tiles/
+{z}/{x}/{y}.png so the pitch demo map renders with no internet
+(REL-03 airplane-mode rehearsal, DoD item 10).
 
 Usage (from repo root):
     python tools/fetch_tiles.py            # download missing tiles
@@ -10,8 +11,10 @@ Usage (from repo root):
 
 Re-runs are idempotent: existing files are skipped, so partial downloads
 (CTRL+C, flaky wifi) can simply be resumed. Keep the volume modest and
-the delay in place -- OSM's tile usage policy asks bulk fetchers to be
-gentle; ~150 tiles once is well within it.
+the delay in place -- CARTO's tile usage policy asks bulk fetchers to be
+gentle; ~230 tiles once is well within it. NOTE: switching basemap
+styles requires deleting dashboard/tiles/ first, or the old style's
+files will be kept as "existing".
 """
 
 import argparse
@@ -21,17 +24,24 @@ import time
 import urllib.request
 from pathlib import Path
 
-# Bounding box: Sindh + South Punjab (Dadu/Larkana/Sukkur belt through
-# Multan/Bahawalpur division). Covers the default map view (center 26.5N
-# 68.0E, zoom 7) with comfortable pan headroom on all sides.
-LAT_MIN, LAT_MAX = 23.5, 31.5
-LON_MIN, LON_MAX = 66.5, 74.0
+# Bounding box: Sindh + South Punjab core (Dadu/Larkana/Sukkur belt
+# through Multan/Bahawalpur division) plus generous headroom. At the
+# default view (center 26.5N 68.0E, zoom 7) a 1080p-wide map column spans
+# roughly lon 62-77 -- the original 66.5-74 box left blank 404 bands at
+# the edges on wide screens, so the cache now covers the whole default
+# viewport with pan room on all sides.
+LAT_MIN, LAT_MAX = 22.5, 33.5
+LON_MIN, LON_MAX = 62.0, 78.0
 ZOOMS = (6, 7, 8, 9)
 
-TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+# CartoDB Positron: minimal light basemap with clear English labels --
+# the dashboard redesign (image-2 target) asks for crisp English city
+# names (Dadu, Larkana, Sukkur...) instead of OSM-standard's localized
+# labels. Attribution: OSM contributors + CARTO.
+TILE_URL = "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
 OUT_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "tiles"
 
-# OSM tile policy: identify the app, don't pretend to be a browser.
+# Tile policy: identify the app, don't pretend to be a browser.
 HEADERS = {"User-Agent": "NidaaAI-demo-tile-cache/1.0 (hackathon demo; contact: repo owners)"}
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
