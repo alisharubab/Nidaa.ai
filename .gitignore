@@ -15,8 +15,10 @@ venv/
 
 # Data / runtime
 nidaa.db
-nidaa.db-shm
-nidaa.db-wal
+core/nidaa.db
+*.db
+*.db-shm
+*.db-wal
 storage/audio/*
 !storage/audio/.gitkeep
 
