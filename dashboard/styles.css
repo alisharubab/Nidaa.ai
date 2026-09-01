@@ -901,7 +901,20 @@ body.present-mode { font-size: 15.7px; /* +12% */ }
   }
 
   .brand-sub { display: none; }
-  .ttt-widget { display: none; } /* keep header uncluttered on phone */
+  .ttt-widget {
+    display: flex !important;
+    padding: 3px 8px;
+    gap: 4px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .ttt-arc { display: none !important; }
+  .ttt-secondary-line { display: none !important; }
+  .ttt-badge { display: none !important; }
+  .ttt-big {
+    font-size: 13px !important;
+    line-height: 14px !important;
+  }
 
   .mobile-view-tabs {
     display: flex;
