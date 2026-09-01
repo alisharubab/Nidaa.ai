@@ -189,25 +189,29 @@ function addStatusCard(data) {
     if (el) el.textContent = _unintelligibleCount;
   }
 
-  const card = document.createElement("div");
-  card.className = "status-card";
-  card.dataset.msgId = key;
-  card.dataset.status = data.status || "";
+  const cached = messageCache.get(data.message_id) || {};
+  const audioPath = data.audio_path || cached.audio_path || null;
+  const audioFileName = audioPath ? audioPath.split(/[\/\\]/).pop() : null;
 
-  const isUnintelligible = data.status === "audio_unintelligible";
-  const title = isUnintelligible ? "Audio Unintelligible"
-              : data.status === "preflight_failed" ? "Preflight Failed"
-              : "Message Failed";
-  const label = ERROR_LABELS[data.error_code] || data.error_code;
-  const sub = isUnintelligible
-    ? "Nidaa could not hear this. Listen yourself."
-    : (label || "Processing failed");
+  const audioHtml = audioFileName
+    ? `<div class="status-audio-row">
+        <audio controls class="status-audio" src="${window.CORE_URL}/audio/${encodeURIComponent(audioFileName)}"></audio>
+      </div>`
+    : isUnintelligible && data.message_id
+      ? `<div class="status-audio-row status-audio-loading" data-msg-id="${data.message_id}">
+          <span class="t-caption">Resolving audio...</span>
+        </div>`
+      : "";
 
   card.innerHTML = `
     <div class="status-card-icon">${isUnintelligible ? "🔇" : "⚠️"}</div>
     <div class="status-card-body">
-      <div class="status-card-title">${title}</div>
+      <div class="status-card-header">
+        <div class="status-card-title">${title}</div>
+        <button class="status-card-dismiss" title="Dismiss" onclick="event.stopPropagation(); _statusCards.get('${key}')?.remove(); _statusCards.delete('${key}');">✕</button>
+      </div>
       <div class="status-card-sub">${sub}</div>
+      ${audioHtml}
       ${data.error_code && isUnintelligible
         ? `<div class="status-card-code t-mono-sm">${data.error_code}</div>`
         : ""}
@@ -216,6 +220,27 @@ function addStatusCard(data) {
 
   stack.insertBefore(card, stack.firstChild);
   _statusCards.set(key, card);
+
+  // If audio path was missing on the SSE event, try lazy backfill
+  if (isUnintelligible && !audioFileName && data.message_id) {
+    _backfillStatusAudio(data.message_id, card);
+  }
+}
+
+async function _backfillStatusAudio(messageId, cardEl) {
+  try {
+    const res = await fetch(`${window.CORE_URL}/api/tickets`);
+    if (!res.ok) return;
+    const { tickets: list } = await res.json();
+    const match = list.find((t) => t.message_id === messageId && t.audio_path);
+    if (!match) return;
+    const fileName = match.audio_path.split(/[\/\\]/).pop();
+    const row = cardEl.querySelector(".status-audio-loading");
+    if (row) {
+      row.innerHTML = `<audio controls class="status-audio" src="${window.CORE_URL}/audio/${encodeURIComponent(fileName)}"></audio>`;
+      row.className = "status-audio-row";
+    }
+  } catch { /* ignore */ }
 }
 
 // Called by filters.js after any filter change so status cards hide/show
