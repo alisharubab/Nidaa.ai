@@ -135,6 +135,21 @@ function updateTTTWidget(m) {
       `p95 <strong>${_fmt(p95)}</strong>` +
       (queue != null ? ` · queue <strong>${queue}</strong>` : "");
   }
+
+  // --- KPI modal elements --------------------------------------------------
+  const km = document.getElementById("kpi-modal-median");
+  if (km && median != null) km.textContent = _fmt(median);
+
+  const ks = document.getElementById("kpi-modal-speedup");
+  if (ks && baseline > 0 && median != null && median > 0) {
+    ks.textContent = `${(baseline / median).toFixed(1)}× FASTER`;
+  }
+
+  const kp95 = document.getElementById("kpi-modal-p95");
+  if (kp95) kp95.textContent = _fmt(p95);
+
+  const kq = document.getElementById("kpi-modal-queue");
+  if (kq) kq.textContent = queue != null ? queue : "0";
 }
 
 function pollMetrics() {

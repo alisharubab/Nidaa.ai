@@ -103,6 +103,20 @@ function switchMobileView(tab) {
 }
 
 // ---------------------------------------------------------------------------
+// KPI Modal Overlay
+// ---------------------------------------------------------------------------
+
+function openKpiModal() {
+  document.getElementById("kpi-scrim")?.classList.add("open");
+  document.getElementById("kpi-modal")?.classList.add("open");
+}
+
+function closeKpiModal() {
+  document.getElementById("kpi-scrim")?.classList.remove("open");
+  document.getElementById("kpi-modal")?.classList.remove("open");
+}
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
@@ -122,7 +136,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Ignore keystrokes in inputs
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
-    if (e.key === "Escape") closeDrawer();
+    if (e.key === "Escape") {
+      closeDrawer();
+      closeKpiModal();
+    }
 
     // 'A': Acknowledge open or top ticket
     if (e.key === "a" || e.key === "A") {

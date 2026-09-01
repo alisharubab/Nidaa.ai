@@ -62,6 +62,38 @@ function refreshDrawer(ticket) {
   _renderDrawerContent(ticket);
 }
 
+function buildEnglishTranslation(ticket, transcript, items) {
+  // If the reasoning note contains a full English explanation from LLM, use it!
+  if (ticket.reasoning_note && ticket.reasoning_note.trim().length > 15) {
+    let note = ticket.reasoning_note.trim();
+    return note.charAt(0).toUpperCase() + note.slice(1);
+  }
+
+  // Construct a fluent translation from the extracted incident details
+  const loc = ticket.adm2_name || ticket.loc_name || "Unknown Location";
+  const people = ticket.people_affected ? `${ticket.people_affected.toLocaleString()} people affected/injured` : "";
+  const cas = ticket.casualties ? `${ticket.casualties} casualties reported` : "";
+  const itemsText = items.length ? itemsSummary(items) : "";
+
+  if (ticket.intent === "resource_request") {
+    let parts = [`Emergency in ${loc}`];
+    if (people) parts.push(people);
+    if (cas) parts.push(cas);
+    if (itemsText) parts.push(`Urgent supplies needed: ${itemsText}`);
+    return parts.join(". ") + ".";
+  }
+  if (ticket.intent === "infrastructure_damage") {
+    return `Infrastructure damage reported in ${loc}${itemsText ? `: ${itemsText}` : ""}.${people ? ` ${people}.` : ""}`;
+  }
+  if (ticket.intent === "incident_report") {
+    let parts = [`Incident reported in ${loc}`];
+    if (people) parts.push(people);
+    if (itemsText) parts.push(`Needs: ${itemsText}`);
+    return parts.join(". ") + ".";
+  }
+  return transcript || "Emergency assistance requested.";
+}
+
 // ---------------------------------------------------------------------------
 // Content renderer
 // ---------------------------------------------------------------------------
@@ -85,6 +117,7 @@ function _renderDrawerContent(ticket) {
   const audioPath  = cached.audio_path  || ticket.audio_path  || null;
   const modality   = cached.modality    || ticket.modality    || null;
   const transcript = cached.raw_text    || ticket.raw_text    || null;
+  const englishTranslation = buildEnglishTranslation(ticket, transcript, items);
 
   // Audio section. Three cases: the shared VoicePlayer (same waveform
   // component as the feed cards) when we have the path, a loading hint
@@ -129,7 +162,7 @@ function _renderDrawerContent(ticket) {
         </div>
         <div class="drawer-transcript urdu-text" id="drawer-transcript-box"
              data-urdu="${escapeHtml(transcript)}"
-             data-latin="${escapeHtml(summary || itemsSummary(items) || transcript)}">
+             data-latin="${escapeHtml(englishTranslation)}">
           ${escapeHtml(transcript)}
         </div>
       </div>`
