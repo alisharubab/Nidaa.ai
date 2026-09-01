@@ -18,7 +18,8 @@ const ID_INSTANCE    = process.env.GREEN_API_ID_INSTANCE    || "";
 const API_TOKEN      = process.env.GREEN_API_TOKEN          || "";
 const API_URL        = `https://api.green-api.com/waInstance${ID_INSTANCE}`;
 const POLL_DELAY_MS  = 1000;  // delay between empty-queue polls
-const RETRY_DELAY_MS = 3000;  // backoff on network / API errors
+const RETRY_DELAY_MS = 3000;  // base backoff on poll errors (ING-11)
+const MAX_BACKOFF_MS = 60000; // backoff cap: 3s, 6s, 12s, 24s, 48s, 60s, 60s...
 
 // --- HTTP helpers ------------------------------------------------------------
 
@@ -139,11 +140,20 @@ async function start({ onInbound }) {
   console.log(`[greenapi] starting poll loop for instance ${ID_INSTANCE}`);
 
   // Poll loop runs detached; start() returns the transport interface immediately.
+  // ING-11 resilience: transient failures (network blips) recover on the base
+  // delay; a SUSTAINED outage backs off exponentially up to MAX_BACKOFF_MS so
+  // an expired instance can't produce a 401 request storm. Counter resets on
+  // the first successful poll.
   (async function pollLoop() {
+    let consecutiveFailures = 0;
+    let authWarned          = false;
+
     while (true) {
       try {
         // ReceiveNotification returns { receiptId, body } or null/empty on timeout
         const notif = await ga("GET", "receiveNotification");
+        consecutiveFailures = 0;
+        authWarned          = false;
 
         if (!notif || !notif.receiptId) {
           // Empty queue — wait briefly before next poll
@@ -177,8 +187,30 @@ async function start({ onInbound }) {
         }
 
       } catch (err) {
-        console.error("[greenapi] poll error:", err.message);
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        consecutiveFailures++;
+        const backoff = Math.min(
+          RETRY_DELAY_MS * 2 ** (consecutiveFailures - 1),
+          MAX_BACKOFF_MS,
+        );
+
+        // 401/403 = instance expired / token revoked — polling can never
+        // succeed until someone re-scans the QR at console.green-api.com.
+        // Say so once per failure streak, not on every request.
+        // ga() error format: "green-api GET receiveNotification 401: <body>"
+        if (/ 40[13]:/.test(err.message) && !authWarned) {
+          authWarned = true;
+          console.error(
+            "[greenapi] auth rejected — instance expired or token revoked. " +
+            "Re-scan the QR code at console.green-api.com and restart the daemon."
+          );
+        }
+
+        console.error(
+          `[greenapi] poll error (${consecutiveFailures} in a row, ` +
+          `retrying in ${Math.round(backoff / 1000)}s):`,
+          err.message,
+        );
+        await new Promise((r) => setTimeout(r, backoff));
       }
     }
   })();
