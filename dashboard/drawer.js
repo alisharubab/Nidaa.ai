@@ -124,7 +124,7 @@ function _renderDrawerContent(ticket) {
           <div class="drawer-section-label">Transcript</div>
           <div class="transcript-toggle-group">
             <button class="btn-tab-pill active" onclick="event.stopPropagation(); _toggleTranscript(this, 'urdu')">اردو</button>
-            <button class="btn-tab-pill" onclick="event.stopPropagation(); _toggleTranscript(this, 'latin')">Latin / Meaning</button>
+            <button class="btn-tab-pill" onclick="event.stopPropagation(); _toggleTranscript(this, 'english')">English Translation</button>
           </div>
         </div>
         <div class="drawer-transcript urdu-text" id="drawer-transcript-box"

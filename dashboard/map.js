@@ -124,6 +124,19 @@ function renderTicketPin(ticket) {
     { direction: "top", offset: [0, -6] }
   );
 
+  // Click pin → open detail drawer & scroll to ticket card
+  marker.on("click", () => {
+    if (typeof openDrawer === "function") {
+      openDrawer(ticket);
+    }
+    const card = document.querySelector(`.ticket-card[data-ticket-id="${ticket.id}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      card.classList.add("highlighted-card");
+      setTimeout(() => card.classList.remove("highlighted-card"), 1500);
+    }
+  });
+
   marker.addTo(pinLayer);
   pinMap.set(ticket.id, marker);
 }

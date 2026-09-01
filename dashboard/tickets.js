@@ -4,8 +4,12 @@
 
 "use strict";
 
-// Global config (loaded before other scripts)
-window.CORE_URL = window.NIDAA_CORE_URL || "http://127.0.0.1:8000";
+// Global config (dynamically adapts to local dev vs deployed hosting on Render/cloud)
+window.CORE_URL = window.NIDAA_CORE_URL || (
+  typeof window !== "undefined" && window.location.protocol !== "file:" && !window.location.origin.includes(":5500")
+    ? window.location.origin
+    : "http://127.0.0.1:8000"
+);
 
 // ---------------------------------------------------------------------------
 // Data store
