@@ -76,7 +76,8 @@ function _renderDrawerContent(ticket) {
   const missing = (() => {
     try { return JSON.parse(ticket.missing_fields || "[]"); } catch { return []; }
   })();
-  const conf = ticket.extraction_conf ?? 0;
+  const summary = structuredSummary(ticket, items);
+  const conf    = ticket.extraction_conf ?? 0;
 
   // Audio: try messageCache first (populated by SSE ingest event), then
   // fall back to ticket fields if Person A adds them to the join later.
@@ -116,11 +117,21 @@ function _renderDrawerContent(ticket) {
     .map((h) => `<span class="drawer-wave-bar" style="height:${Math.max(4, Math.round(h * conf * 56))}px"></span>`)
     .join("");
 
-  // Transcript
+  // Dual-script Transcript Section
   const transcriptSection = transcript
     ? `<div class="drawer-section">
-        <div class="drawer-section-label">Transcript</div>
-        <div class="urdu-text drawer-transcript">${transcript}</div>
+        <div class="drawer-section-top">
+          <div class="drawer-section-label">Transcript</div>
+          <div class="transcript-toggle-group">
+            <button class="btn-tab-pill active" onclick="event.stopPropagation(); _toggleTranscript(this, 'urdu')">اردو</button>
+            <button class="btn-tab-pill" onclick="event.stopPropagation(); _toggleTranscript(this, 'latin')">Latin / Meaning</button>
+          </div>
+        </div>
+        <div class="drawer-transcript urdu-text" id="drawer-transcript-box"
+             data-urdu="${escapeHtml(transcript)}"
+             data-latin="${escapeHtml(summary || itemsSummary(items) || transcript)}">
+          ${escapeHtml(transcript)}
+        </div>
       </div>`
     : "";
 
@@ -194,9 +205,14 @@ function _renderDrawerContent(ticket) {
       ${reasoningSection}
     </div>
     <div class="drawer-footer">
-      <span class="state-dot ${state}">
-        ${isConfirmed ? "Confirmed" : isDisputed ? "Disputed" : "Unconfirmed"}
-      </span>
+      <div class="drawer-footer-left">
+        <span class="state-dot ${state}">
+          ${isConfirmed ? "Confirmed" : isDisputed ? "Disputed" : "Unconfirmed"}
+        </span>
+        <button class="btn-drawer-dismiss" onclick="dismissTicket(${ticket.id}); closeDrawer();" title="Remove from active stream">
+          Dismiss Ticket
+        </button>
+      </div>
       <div class="drawer-actions">
         <button class="btn-flag"
           onclick="flagTicket(${ticket.id})"
@@ -212,5 +228,22 @@ function _renderDrawerContent(ticket) {
   const playerMount = drawer.querySelector("[data-drawer-player]");
   if (playerMount && modality === "audio" && audioPath) {
     playerMount.replaceWith(VoicePlayer.create(ticket, audioPath));
+  }
+}
+
+function _toggleTranscript(btn, script) {
+  const box = document.getElementById("drawer-transcript-box");
+  if (!box) return;
+  const parent = btn.closest(".transcript-toggle-group");
+  if (parent) {
+    parent.querySelectorAll(".btn-tab-pill").forEach((b) => b.classList.remove("active"));
+  }
+  btn.classList.add("active");
+  if (script === "urdu") {
+    box.textContent = box.dataset.urdu || "";
+    box.className = "drawer-transcript urdu-text";
+  } else {
+    box.textContent = box.dataset.latin || "";
+    box.className = "drawer-transcript latin-text";
   }
 }
