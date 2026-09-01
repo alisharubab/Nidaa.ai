@@ -1,57 +1,58 @@
 // Every outbound Roman Urdu string lives here, and only here. core/ never
 // composes user-facing text — it sends a template name + vars via
 // POST /internal/reply (docs/TRD.md section 3.2), and this file renders it.
-// Exact copy from docs/PRD.md sections 3.1, 3.2, and 6.
+// Optimized for mobile WhatsApp bubble widths (no awkward mid-sentence linebreaks).
 
 function consentNotice() {
   return (
-    "Nidaa-AI (Rescue Triage Bot)\n\n" +
-    "Ye ek automated rescue triage system hai. Aap ka message AI\n" +
-    "se process hoga taake rescue team tak jaldi pohnche.\n\n" +
+    "🚨 *Nidaa-AI (Rescue Triage Bot)*\n\n" +
+    "Ye ek automated rescue triage system hai. Aap ka message AI se process hoga taake rescue team tak jaldi pohnche.\n\n" +
     "• Aap ka message aur voice note process kiya jayega\n" +
     "• Aap ka number sirf rescue team ko dikhega (masked)\n" +
     "• Data 72 ghantay baad delete ho jata hai\n" +
     "• Ye AI hai, insan nahi. Ghalti mumkin hai.\n" +
-    "• Rukne ke liye likhein: BAND\n\n" +
-    "Emergency? Rescue 1122 / 1129 par call bhi karein."
+    "• Rukne ke liye likhein: *BAND*\n\n" +
+    "⚠️ Emergency? Rescue *1122* / *1129* par call bhi karein."
   );
 }
 
 function readback({ adm2, province, items, urgency }) {
   return (
-    "Nidaa-AI ne ye samjha hai:\n\n" +
-    `Jagah: ${adm2}, ${province}\n` +
-    `Zaroorat: ${items}\n` +
-    `Halat: ${urgency}\n\n` +
+    "📋 *Nidaa-AI ne ye samjha hai:*\n\n" +
+    `📍 *Jagah:* ${adm2}, ${province}\n` +
+    `📦 *Zaroorat:* ${items}\n` +
+    `⚠️ *Halat:* ${urgency}\n\n` +
     "Sahi hai? Jawab dein:\n" +
-    "1 = Haan, sahi hai\n" +
-    "2 = Nahi, ghalat hai"
+    "*1* = Haan, sahi hai\n" +
+    "*2* = Nahi, ghalat hai"
   );
+}
+
+function readbackAck({ confirmed }) {
+  return confirmed
+    ? "✅ *Shukriya!* Aap ki report confirm ho chuki hai aur rescue teams tak pohncha di gayi hai."
+    : "⚠️ *Noted!* Aap ki report review queue mein bhej di gayi hai taake rescue team dobara check kare.";
 }
 
 function audioUnintelligible() {
   return (
-    "Nidaa-AI: Awaz saaf nahi aa rahi (background shor bohat zyada hai).\n" +
-    "Baraye meherbani apna message TYPE kar ke bhejein, ya WhatsApp\n" +
-    "ki LIVE LOCATION bhejein. Rescue team ko itni maloomat chahiye:\n" +
-    "jagah, kitne log, kya chahiye."
+    "🔇 *Nidaa-AI: Awaz saaf nahi aa rahi (background shor zyada hai).*\n\n" +
+    "Baraye meherbani apna message *TYPE* kar ke bhejein, ya WhatsApp ki *LIVE LOCATION* share karein.\n\n" +
+    "Zaroori maloomat: Jagah, kitne log, aur kya madad chahiye."
   );
 }
 
 function locationMissing() {
-  // TODO(ING-08): confirm final copy with the team — PRD does not give an
-  // exact string for this template, only the requirement (docs/PRD.md
-  // section 3.3 / docs/TRD.md GEOCODE_NO_MATCH row). Keep tone consistent
-  // with the other templates above.
   return (
-    "Nidaa-AI: Jagah samajh nahi aayi. Baraye meherbani WhatsApp ki\n" +
-    "LIVE LOCATION share karein, ya jagah ka naam type karein."
+    "📍 *Nidaa-AI: Jagah samajh nahi aayi.*\n\n" +
+    "Baraye meherbani WhatsApp par *LIVE LOCATION* share karein, ya jagah ka naam type kar ke bhejein."
   );
 }
 
 const TEMPLATES = {
   consent_notice: consentNotice,
   readback,
+  readback_ack: readbackAck,
   audio_unintelligible: audioUnintelligible,
   location_missing: locationMissing,
 };
