@@ -101,12 +101,11 @@ Colour vision deficiency and a projector with washed-out gamma will both appear 
 
 | Role | Face | Weights | Why this one |
 | :-- | :-- | :-- | :-- |
-| Display | **Archivo** (width axis, use Expanded 600 and 700) | 600, 700 | Wide institutional grotesque. Reads as control room signage rather than SaaS marketing. Used only for the TTT header and page-level titles. |
-| UI and body | **Public Sans** | 400, 500, 600 | Built for a public-service design system, so it is unglamorous and extremely legible at 13px. Deliberately not Inter. |
+| UI, Display & Body | **Plus Jakarta Sans** | 400, 500, 600, 700 | Crisp, modern, high-contrast grotesque with geometric clarity and deep legibility across high-density operational screens. |
 | Data and numerals | **IBM Plex Mono** | 400, 500 | Timers, P-codes, coordinates, quantities, confidence values. Tabular figures so numbers do not jitter when they update live. |
-| Urdu script | **Noto Nastaliq Urdu** | 400 | Non-negotiable. See 3.3. |
+| Urdu script | **Noto Nastaliq Urdu** / **Gulzar** | 400, 600, 700 | Authentic Nastaliq calligraphy with generous line-height (`2.3+`) for high-fidelity disaster transcripts and SMS readbacks. |
 
-All four load from Google Fonts, all free, all self-hostable in a `fonts/` folder for offline demo safety.
+All fonts load from Google Fonts, all free, and easily self-hosted in `fonts/` for pitch demo offline safety.
 
 ### 3.2 Scale
 
