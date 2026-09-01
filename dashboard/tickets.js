@@ -170,6 +170,7 @@ function renderTicketCard(ticket) {
         <div class="ticket-head-right">
           <span class="ticket-urgency-badge">${URGENCY_LABELS[urgency]}</span>
           <span class="ticket-time" title="${escapeHtml(time)}">${escapeHtml(ago)}</span>
+          <button class="btn-card-dismiss" title="Dismiss ticket" onclick="event.stopPropagation(); dismissTicket(${ticket.id})">✕</button>
         </div>
       </div>
       ${modality === "audio" ? '<div class="ticket-player-mount" data-player-mount></div>' : ""}
@@ -289,25 +290,74 @@ function setLiveIndicator(isLive) {
   if (text) text.textContent = isLive ? "live" : "reconnecting";
 }
 
-// ---------------------------------------------------------------------------
-// Queue counts (left rail)
-// ---------------------------------------------------------------------------
+// Persistent client-side dismissals (saved in localStorage across page reloads)
+const dismissedTickets = new Set(
+  JSON.parse(localStorage.getItem("nidaa_dismissed_tickets") || "[]")
+);
+
+function dismissTicket(id) {
+  dismissedTickets.add(id);
+  try {
+    localStorage.setItem("nidaa_dismissed_tickets", JSON.stringify([...dismissedTickets]));
+  } catch { /* ignore quota */ }
+  applyFilters();
+  updateCounts();
+}
+
+function restoreTicket(id) {
+  dismissedTickets.delete(id);
+  try {
+    localStorage.setItem("nidaa_dismissed_tickets", JSON.stringify([...dismissedTickets]));
+  } catch { /* ignore quota */ }
+  applyFilters();
+  updateCounts();
+}
 
 function updateCounts() {
-  const total     = tickets.length;
-  const critical  = tickets.filter((t) => t.urgency === "critical").length;
-  const unlocated = tickets.filter((t) => t.latitude == null || t.longitude == null).length;
-  const disputed  = tickets.filter((t) => t.verification_status === "user_disputed").length;
+  const activeTickets = tickets.filter((t) => !dismissedTickets.has(t.id));
+  const total        = activeTickets.length;
+  const critical     = activeTickets.filter((t) => t.urgency === "critical").length;
+  const unlocated    = activeTickets.filter((t) => t.latitude == null || t.longitude == null).length;
+  const acknowledged = activeTickets.filter((t) => t.dispatcher_verdict === "verified" || t.verification_status === "user_confirmed").length;
+  const disputed     = activeTickets.filter((t) => t.verification_status === "user_disputed").length;
 
   const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
   set("count-all",            total);
   set("count-critical",       critical);
   set("count-unlocated",      unlocated);
+  set("count-acknowledged",   acknowledged);
   set("count-unintelligible", 0); // wired via message.status SSE in stream.js
   set("count-disputed",       disputed);
 
   const sc = document.getElementById("stream-count");
-  if (sc) sc.textContent = `${total} ticket${total !== 1 ? "s" : ""}`;
+  if (sc) sc.textContent = `${total} active ticket${total !== 1 ? "s" : ""}`;
+  const mfc = document.getElementById("m-feed-count");
+  if (mfc) mfc.textContent = total;
+
+  updateDistrictTicker();
+}
+
+function updateDistrictTicker() {
+  const el = document.getElementById("ticker-content");
+  if (!el) return;
+  const active = tickets.filter((t) => !dismissedTickets.has(t.id) && t.adm2_name);
+  if (!active.length) {
+    el.textContent = "No active located incidents.";
+    return;
+  }
+  const districtMap = new Map();
+  for (const t of active) {
+    const d = t.adm2_name;
+    const items = parseItems(t.items_json);
+    const summary = items.length ? itemsSummary(items) : (t.intent || "assistance");
+    if (!districtMap.has(d)) districtMap.set(d, []);
+    districtMap.get(d).push(summary);
+  }
+  const text = Array.from(districtMap.entries())
+    .slice(0, 8)
+    .map(([dist, needs]) => `${dist}: ${needs.slice(0, 2).join(", ")}`)
+    .join("   ·   ");
+  el.textContent = text;
 }
 
 // ---------------------------------------------------------------------------
