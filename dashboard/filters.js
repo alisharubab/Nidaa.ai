@@ -34,7 +34,14 @@ function applyFilters() {
 
   const visible = tickets.filter(ticketMatchesFilter);
 
-  if (visible.length === 0) {
+  // "Unhearable" queue: unintelligible messages yield status cards in
+  // #status-stack, never tickets — the failure cards above ARE the content,
+  // so a "No tickets match" message below them would be misleading (UI-UX §8).
+  const hasUnintelligibleCards = document.querySelectorAll(
+    '#status-stack .status-card[data-status="audio_unintelligible"]'
+  ).length > 0;
+
+  if (visible.length === 0 && !(activeQueue === "unintelligible" && hasUnintelligibleCards)) {
     const empty = document.createElement("div");
     empty.className = "filter-empty";
     empty.textContent = "No tickets match this filter.";
