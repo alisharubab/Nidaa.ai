@@ -1,0 +1,23 @@
+{
+  "id": "a07",
+  "modality": "audio",
+  "noise_tier": "moderate",
+  "source": "human",
+  "script": "Kambar mein paani tezi se barh raha hai, logon ko khali karana zaroori hai.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Kambar Shahdad Kot",
+        "province": "Sindh",
+        "pcode": "PK709",
+        "intent": "incident_report",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

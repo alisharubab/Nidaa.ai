@@ -1,0 +1,23 @@
+{
+  "id": "a04",
+  "modality": "audio",
+  "noise_tier": "clean",
+  "source": "human",
+  "script": "Jacobabad se gaon jaane wali sarak paani mein doob gayi hai, koi raasta nahi bacha.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Jacobabad",
+        "province": "Sindh",
+        "pcode": "PK707",
+        "intent": "infrastructure_damage",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

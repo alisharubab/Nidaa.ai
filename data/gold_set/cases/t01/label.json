@@ -1,0 +1,51 @@
+{
+  "id": "t01",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Larkana mein paani chahiye, Sukkur mein khana chahiye, aur Multan mein log pareshan hain. Jaldi madad pohnchao.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Larkana",
+        "province": "Sindh",
+        "pcode": "PK713",
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [
+          {
+            "item": "water"
+          }
+        ],
+        "people_affected": null,
+        "casualties": null
+      },
+      {
+        "district": "Sukkur",
+        "province": "Sindh",
+        "pcode": "PK723",
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [
+          {
+            "item": "food"
+          }
+        ],
+        "people_affected": null,
+        "casualties": null
+      },
+      {
+        "district": "Multan",
+        "province": "Punjab",
+        "pcode": "PK622",
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

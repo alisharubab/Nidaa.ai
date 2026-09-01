@@ -1,0 +1,23 @@
+{
+  "id": "a10",
+  "modality": "audio",
+  "noise_tier": "moderate",
+  "source": "human",
+  "script": "Shikarpur mein school ki deewar paani se gir gayi hai, bachon ka imtihan multawi ho gaya hai.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Shikarpur",
+        "province": "Sindh",
+        "pcode": "PK720",
+        "intent": "infrastructure_damage",
+        "urgency": "moderate",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "a09",
+  "modality": "audio",
+  "noise_tier": "moderate",
+  "source": "human",
+  "script": "Thatta mein paanch sau log khane ke mohtaj hain, ration pohncha dein.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Thatta",
+        "province": "Sindh",
+        "pcode": "PK727",
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [
+          {
+            "item": "food"
+          }
+        ],
+        "people_affected": 500,
+        "casualties": null
+      }
+    ]
+  }
+}

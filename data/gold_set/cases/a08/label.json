@@ -1,0 +1,30 @@
+{
+  "id": "a08",
+  "modality": "audio",
+  "noise_tier": "moderate",
+  "source": "human",
+  "script": "Multan ke camp mein bache aur kamble chahiye, sardi mein bachon ko thand lag rahi hai.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Multan",
+        "province": "Punjab",
+        "pcode": "PK622",
+        "intent": "resource_request",
+        "urgency": "moderate",
+        "items": [
+          {
+            "item": "blanket"
+          },
+          {
+            "item": "shelter"
+          }
+        ],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

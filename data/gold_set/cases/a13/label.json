@@ -1,0 +1,11 @@
+{
+  "id": "a13",
+  "modality": "audio",
+  "noise_tier": "severe",
+  "source": "tts",
+  "script": "(any script -- gate must reject)",
+  "text": null,
+  "expected": {
+    "outcome": "audio_unintelligible"
+  }
+}

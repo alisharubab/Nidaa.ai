@@ -1,0 +1,23 @@
+{
+  "id": "t03",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "مظفرگڑھ میں پانی خطرے کی حد پر ہے، لوگ مکان چھوڑ کر جا رہے ہیں، فوراً مدد بھیجیں۔",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Muzaffargarh",
+        "province": "Punjab",
+        "pcode": "PK623",
+        "intent": "resource_request",
+        "urgency": "critical",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

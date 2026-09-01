@@ -1,0 +1,23 @@
+{
+  "id": "a05",
+  "modality": "audio",
+  "noise_tier": "clean",
+  "source": "human",
+  "script": "Salam, sab theek hai? Main bas check kar raha tha ke ye number kaam kar raha hai.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": null,
+        "province": null,
+        "pcode": null,
+        "intent": "non_actionable",
+        "urgency": "info",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

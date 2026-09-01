@@ -1,0 +1,27 @@
+{
+  "id": "a06",
+  "modality": "audio",
+  "noise_tier": "moderate",
+  "source": "human",
+  "script": "Larkana mein paani ki level barh rahi hai, kashtiyan bhejein, log chatiyon par hain.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Larkana",
+        "province": "Sindh",
+        "pcode": "PK713",
+        "intent": "resource_request",
+        "urgency": "critical",
+        "items": [
+          {
+            "item": "boat"
+          }
+        ],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "t10",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Charsadda mein pul toot gaya hai, gaariyan dono taraf phansi hui hain.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Charsadda",
+        "province": "Khyber Pakhtunkhwa",
+        "pcode": "PK506",
+        "intent": "infrastructure_damage",
+        "urgency": "critical",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "t05",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Rajanpur mein bund tootne se teen log beh gaye hain, aur kai ghayal hain.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Rajanpur",
+        "province": "Punjab",
+        "pcode": "PK629",
+        "intent": "incident_report",
+        "urgency": "critical",
+        "items": [],
+        "people_affected": null,
+        "casualties": 3
+      }
+    ]
+  }
+}

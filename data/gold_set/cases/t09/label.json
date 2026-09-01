@@ -1,0 +1,33 @@
+{
+  "id": "t09",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Badin mein machhere apni kashtiyaan kho chuke hain, aur Ghotki mein zameen ke neeche paani aa raha hai. Dono jagah madad chahiye.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Badin",
+        "province": "Sindh",
+        "pcode": "PK701",
+        "intent": "incident_report",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      },
+      {
+        "district": "Ghotki",
+        "province": "Sindh",
+        "pcode": "PK705",
+        "intent": "incident_report",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

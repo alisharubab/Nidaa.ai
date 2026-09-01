@@ -1,0 +1,27 @@
+{
+  "id": "t02",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Hamare ghar paani aa gaya hai, bachon ke liye khana nahi hai. Jagah ka pata main nahi bata sakta.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": null,
+        "province": null,
+        "pcode": null,
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [
+          {
+            "item": "food"
+          }
+        ],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

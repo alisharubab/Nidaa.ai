@@ -1,0 +1,23 @@
+{
+  "id": "t07",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Dera Ghazi Khan mein mobile network aur bijli dono band hain, raasta bhi paani mein hai.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Dera Ghazi Khan",
+        "province": "Punjab",
+        "pcode": "PK607",
+        "intent": "infrastructure_damage",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

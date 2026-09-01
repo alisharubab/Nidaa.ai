@@ -1,0 +1,23 @@
+{
+  "id": "a02",
+  "modality": "audio",
+  "noise_tier": "clean",
+  "source": "human",
+  "script": "Swat mein nadi ka paani aaya hua hai, ek bacha doob gaya hai, waqt bohot kam hai.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Swat",
+        "province": "Khyber Pakhtunkhwa",
+        "pcode": "PK532",
+        "intent": "incident_report",
+        "urgency": "critical",
+        "items": [],
+        "people_affected": null,
+        "casualties": 1
+      }
+    ]
+  }
+}

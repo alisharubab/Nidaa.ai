@@ -1,0 +1,30 @@
+{
+  "id": "a01",
+  "modality": "audio",
+  "noise_tier": "clean",
+  "source": "human",
+  "script": "Dadu mein paani aur khane ki bohot zaroorat hai, log bhaage hue hain, jaldi madad pohnchani hai.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Dadu",
+        "province": "Sindh",
+        "pcode": "PK703",
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [
+          {
+            "item": "water"
+          },
+          {
+            "item": "food"
+          }
+        ],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

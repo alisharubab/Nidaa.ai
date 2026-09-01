@@ -1,0 +1,23 @@
+{
+  "id": "t06",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Hello? Is anyone receiving this message? Testing one two three.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": null,
+        "province": null,
+        "pcode": null,
+        "intent": "non_actionable",
+        "urgency": "info",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}

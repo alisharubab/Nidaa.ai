@@ -1,0 +1,27 @@
+{
+  "id": "a03",
+  "modality": "audio",
+  "noise_tier": "clean",
+  "source": "human",
+  "script": "Sukkur ke camp mein do sau log hain, dawai aur medical team foran chahiye.",
+  "text": null,
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Sukkur",
+        "province": "Sindh",
+        "pcode": "PK723",
+        "intent": "resource_request",
+        "urgency": "critical",
+        "items": [
+          {
+            "item": "medicine"
+          }
+        ],
+        "people_affected": 200,
+        "casualties": null
+      }
+    ]
+  }
+}

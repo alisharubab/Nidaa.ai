@@ -1,0 +1,27 @@
+{
+  "id": "t08",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Khairpur mein ek hazaar log saaf paani ke baghair hain, tanker bhejein.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Khairpur",
+        "province": "Sindh",
+        "pcode": "PK711",
+        "intent": "resource_request",
+        "urgency": "high",
+        "items": [
+          {
+            "item": "water"
+          }
+        ],
+        "people_affected": 1000,
+        "casualties": null
+      }
+    ]
+  }
+}

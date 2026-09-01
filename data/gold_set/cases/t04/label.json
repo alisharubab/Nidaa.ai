@@ -1,0 +1,23 @@
+{
+  "id": "t04",
+  "modality": "text",
+  "noise_tier": null,
+  "source": "human",
+  "script": null,
+  "text": "Nawabshah mein teen din se bijli band hai, paani ki motor bhi nahi chal rahi.",
+  "expected": {
+    "outcome": "extracted",
+    "records": [
+      {
+        "district": "Shaheed Benazir Abad",
+        "province": "Sindh",
+        "pcode": "PK719",
+        "intent": "infrastructure_damage",
+        "urgency": "high",
+        "items": [],
+        "people_affected": null,
+        "casualties": null
+      }
+    ]
+  }
+}
