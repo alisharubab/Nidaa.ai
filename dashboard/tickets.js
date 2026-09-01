@@ -53,31 +53,100 @@ function itemsSummary(items) {
   }).join(", ");
 }
 
-// Waveform placeholder bars shown on cards
-function waveformBars() {
-  const heights = [6, 14, 20, 16, 10, 6, 4, 12, 18, 14, 8, 4];
-  return heights.map((h) =>
-    `<span class="waveform-bar" style="height:${h}px;opacity:0.45"></span>`
-  ).join("");
+// --- Live voice card helpers (image-2 redesign) ---------------------------
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
 }
 
+function timeAgo(iso) {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+const INTENT_SUMMARY = {
+  resource_request: "Resource request",
+  incident_report: "Incident report",
+  infrastructure_damage: "Infrastructure damage",
+  non_actionable: "Non-actionable",
+};
+
+// English structured line derived from the extraction — pairs with the
+// Urdu transcript below it for the card's dual-script presentation.
+function structuredSummary(ticket, items) {
+  const parts = [];
+  if (ticket.intent === "resource_request" && items.length) {
+    parts.push("Needs " + itemsSummary(items));
+  } else if (ticket.intent) {
+    parts.push(INTENT_SUMMARY[ticket.intent] || ticket.intent);
+  }
+  if (ticket.people_affected > 0) parts.push(`≈${ticket.people_affected} affected`);
+  if (ticket.casualties > 0) {
+    parts.push(`${ticket.casualties} ${ticket.casualties === 1 ? "casualty" : "casualties"}`);
+  }
+  return parts.join(" · ");
+}
+
+// Colourful relief-supply badges — Food 🍲 / Boats 🚤 / Medical 💊 etc.
+// Item names are the pipeline's normalised vocabulary (extract.py).
+const ITEM_META = {
+  water:            { emoji: "💧", cls: "item-water" },
+  food:             { emoji: "🍲", cls: "item-food" },
+  medicine:         { emoji: "💊", cls: "item-med" },
+  medical:          { emoji: "💊", cls: "item-med" },
+  "medical supplies": { emoji: "💊", cls: "item-med" },
+  "health supplies": { emoji: "💊", cls: "item-med" },
+  boat:             { emoji: "🚤", cls: "item-boat" },
+  boats:            { emoji: "🚤", cls: "item-boat" },
+  blanket:          { emoji: "🧣", cls: "item-blanket" },
+  blankets:         { emoji: "🧣", cls: "item-blanket" },
+  shelter:          { emoji: "⛺", cls: "item-shelter" },
+};
+
+function itemBadges(items) {
+  if (!items || items.length === 0) return "";
+  return items.map((i) => {
+    const name = (i.item || "").toString().trim();
+    const meta = ITEM_META[name.toLowerCase()] || { emoji: "📦", cls: "item-other" };
+    const qty = i.qty ? `${escapeHtml(String(i.qty))} ` : "";
+    return `<span class="item-badge ${meta.cls}">${meta.emoji} ${qty}${escapeHtml(name)}</span>`;
+  }).join("");
+}
+
+const URDU_SCRIPT = /[\u0600-\u06FF]/;
+
 // ---------------------------------------------------------------------------
-// Card renderer (UI-UX §6.2)
+// Card renderer — live voice card (image-2 redesign, UI-UX §6.2 basis)
+// District & urgency header + timestamp, playable voice waveform, dual-script
+// transcript, relief badges, acknowledge action.
 // ---------------------------------------------------------------------------
 
 function renderTicketCard(ticket) {
   const urgency  = ticket.urgency || "info";
   const state    = verificationState(ticket);
   const items    = parseItems(ticket.items_json);
-  const summary  = itemsSummary(items);
   const pcode    = ticket.pcode || "";
   const time     = formatTime(ticket.created_at);
-  const modality = messageCache.get(ticket.message_id)?.modality || ticket.modality || null;
-  const duration = ticket.audio_duration_s
-    ? `${Math.round(ticket.audio_duration_s)}s`
-    : messageCache.get(ticket.message_id)?.audio_duration_s
-      ? `${Math.round(messageCache.get(ticket.message_id).audio_duration_s)}s`
-      : "";
+  const ago      = timeAgo(ticket.created_at);
+
+  // Message fields: cache (REST join / backfill) first, ticket fields second
+  const cached    = messageCache.get(ticket.message_id) || {};
+  const modality  = cached.modality          || ticket.modality          || null;
+  const audioPath = cached.audio_path        || ticket.audio_path        || null;
+  const transcript = cached.raw_text          || ticket.raw_text          || null;
+  const isUrdu    = URDU_SCRIPT.test(transcript || "");
+
+  const summary   = structuredSummary(ticket, items);
+  const badges    = itemBadges(items);
+  const acked     = state === "confirmed";
 
   const card = document.createElement("div");
   card.className = `ticket-card urgency-${urgency}`;
@@ -90,24 +159,44 @@ function renderTicketCard(ticket) {
   card.innerHTML = `
     <div class="ticket-body">
       <div class="ticket-top">
-        <span class="ticket-urgency-badge">${URGENCY_LABELS[urgency]}</span>
-        <span class="ticket-time">${time}</span>
+        <div class="ticket-head-left">
+          <span class="ticket-district">${escapeHtml(ticket.adm2_name || "Unlocated")}</span>
+          <span class="ticket-loc-sub">${[
+              ticket.adm1_name ? escapeHtml(ticket.adm1_name) : "",
+              pcode ? escapeHtml(pcode) : "",
+              modality === "audio" ? "Voice note" : modality === "text" ? "Text" : "",
+            ].filter(Boolean).join(" · ")}</span>
+        </div>
+        <div class="ticket-head-right">
+          <span class="ticket-urgency-badge">${URGENCY_LABELS[urgency]}</span>
+          <span class="ticket-time" title="${escapeHtml(time)}">${escapeHtml(ago)}</span>
+        </div>
       </div>
-      <div class="ticket-location">
-        <span class="ticket-district">${ticket.adm2_name || "Unlocated"}${ticket.adm1_name ? ", " + ticket.adm1_name : ""}</span>
-        ${pcode ? `<span class="ticket-pcode">${pcode}</span>` : ""}
-      </div>
-      ${summary ? `<div class="ticket-summary">${summary}</div>` : ""}
-      <div class="ticket-waveform">
-        ${modality === "audio" ? waveformBars() : ""}
-        ${duration ? `<span class="waveform-duration">${duration}</span>` : ""}
-      </div>
+      ${modality === "audio" ? '<div class="ticket-player-mount" data-player-mount></div>' : ""}
+      ${summary ? `<div class="ticket-summary">${escapeHtml(summary)}</div>` : ""}
+      ${transcript
+        ? `<div class="ticket-transcript ${isUrdu ? "urdu-text" : "latin-text"}">${escapeHtml(transcript)}</div>`
+        : ""}
+      ${badges ? `<div class="ticket-items">${badges}</div>` : ""}
       <div class="ticket-footer">
         <span class="state-dot ${state}">${state === "confirmed" ? "Confirmed" : state === "disputed" ? "Disputed" : "Unconfirmed"}</span>
-        <button class="btn-ack" onclick="event.stopPropagation(); acknowledgeTicket(${ticket.id})">Acknowledge</button>
+        <button class="btn-ack${acked ? " acked" : ""}" onclick="event.stopPropagation(); acknowledgeTicket(${ticket.id})"
+          ${acked ? "disabled" : ""}>${acked ? "✓ Acknowledged" : "Acknowledge"}</button>
       </div>
     </div>
   `;
+
+  // Real playable waveform — replaces the old decorative static bars
+  const mount = card.querySelector("[data-player-mount]");
+  if (mount) {
+    if (audioPath) {
+      mount.replaceWith(VoicePlayer.create(ticket, audioPath));
+    } else {
+      // Voice message whose path isn't known yet (SSE-created, backfill in
+      // flight) — the backfill re-renders with the real player.
+      mount.remove();
+    }
+  }
 
   // Click → drawer
   card.addEventListener("click", () => openDrawer(ticket));
@@ -147,9 +236,40 @@ function addTicket(ticket) {
       audio_duration_s:  ticket.audio_duration_s,
       raw_text:          ticket.raw_text,
     });
+  } else {
+    // SSE-created tickets lack the message join (get_ticket selects tickets
+    // only) — pull the joined fields once so cards can show the real
+    // transcript + audio player.
+    _ensureMessageFields();
   }
   applyFilters();
   updateCounts();
+}
+
+// Fetches GET /api/tickets (whose rows carry the messages join) into the
+// messageCache, then re-renders so live cards gain transcript + player.
+// Re-fetches at most once per 30 s window (replay bursts hit the cache).
+let _messageFieldsAt = 0;
+function _ensureMessageFields() {
+  if (Date.now() - _messageFieldsAt < 30000) return;
+  _messageFieldsAt = Date.now();
+  (async () => {
+    try {
+      const res = await fetch(`${window.CORE_URL}/api/tickets`);
+      if (!res.ok) return;
+      const { tickets: list } = await res.json();
+      for (const t of list) {
+        if (t.message_id == null || messageCache.has(t.message_id)) continue;
+        messageCache.set(t.message_id, {
+          modality:          t.modality,
+          audio_path:        t.audio_path,
+          audio_duration_s:  t.audio_duration_s,
+          raw_text:          t.raw_text,
+        });
+      }
+      applyFilters(); // re-render: transcripts + players now available
+    } catch { /* core unreachable — cards stay without transcripts */ }
+  })();
 }
 
 function updateTicket(ticket) {
