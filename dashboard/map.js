@@ -41,9 +41,7 @@ function _probeLocalTiles() {
 }
 
 async function _addTileLayer() {
-  // CartoDB Positron: light basemap with crisp English labels — the
-  // localized labels on OSM-standard tiles read as blurry clutter next
-  // to the redesigned white cards.
+  // CARTO Basemaps: high-DPI raster tiles with clean English labels and API key authorization.
   const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
   if (await _probeLocalTiles()) {
     L.tileLayer("tiles/{z}/{x}/{y}.png", {
@@ -55,10 +53,12 @@ async function _addTileLayer() {
       maxZoom: 11,
     }).addTo(map);
   } else {
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
+    // Live CARTO Voyager with authorized API key (zero watermark, crisp English labels)
+    const CARTO_KEY = "cb1_2qam_1_e831351c560f2413f1d51b3b";
+    L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${CARTO_KEY}`, {
       attribution,
       subdomains: "abcd",
-      maxZoom: 18,
+      maxZoom: 19,
     }).addTo(map);
   }
 }
