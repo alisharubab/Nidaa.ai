@@ -12,9 +12,15 @@ let activeQueue   = "all";
 // ---------------------------------------------------------------------------
 
 function ticketMatchesFilter(ticket) {
+  // Hide dismissed tickets from normal queue feeds
+  if (typeof dismissedTickets !== "undefined" && dismissedTickets.has(ticket.id)) {
+    return false;
+  }
+
   if (activeQueue !== "all") {
     if (activeQueue === "critical"       && ticket.urgency !== "critical")                          return false;
     if (activeQueue === "unlocated"      && !(ticket.latitude == null || ticket.longitude == null)) return false;
+    if (activeQueue === "acknowledged"   && !(ticket.dispatcher_verdict === "verified" || ticket.verification_status === "user_confirmed")) return false;
     if (activeQueue === "unintelligible" && ticket.error_code !== "STT_LOW_CONFIDENCE")             return false;
     if (activeQueue === "disputed"       && ticket.verification_status !== "user_disputed")         return false;
   }
