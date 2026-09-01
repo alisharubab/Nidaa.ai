@@ -34,11 +34,9 @@ LAT_MIN, LAT_MAX = 22.5, 33.5
 LON_MIN, LON_MAX = 62.0, 78.0
 ZOOMS = (6, 7, 8, 9)
 
-# CartoDB Positron: minimal light basemap with clear English labels --
-# the dashboard redesign (image-2 target) asks for crisp English city
-# names (Dadu, Larkana, Sukkur...) instead of OSM-standard's localized
-# labels. Attribution: OSM contributors + CARTO.
-TILE_URL = "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+# CARTO Voyager with API key: clean English labels, no watermark.
+# Attribution: OSM contributors + CARTO.
+TILE_URL = "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2qam_1_e831351c560f2413f1d51b3b"
 OUT_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "tiles"
 
 # Tile policy: identify the app, don't pretend to be a browser.
