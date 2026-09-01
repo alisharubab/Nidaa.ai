@@ -23,20 +23,11 @@ function connectStream() {
     try { updateTicket(JSON.parse(e.data)); } catch { /* ignore */ }
   });
 
-  // CORE-15: real-time queue_depth every 2s — patch just the queue badge,
-  // leaving median/p95/baseline written by pollMetrics().
+  // CORE-15: real-time metrics every 2s over SSE — queue depth is the
+  // 2-second signal; median/p95/baseline keep their 5s poll values until
+  // the next pollMetrics() write.
   source.addEventListener("metrics", (e) => {
-    try {
-      const m = JSON.parse(e.data);
-      if (m.queue_depth == null) return;
-      const el = document.getElementById("ttt-summary");
-      if (!el) return;
-      el.querySelectorAll(".ttt-queue").forEach((n) => n.remove());
-      const span = document.createElement("span");
-      span.className = "ttt-queue";
-      span.innerHTML = ` · queue <strong>${m.queue_depth}</strong>`;
-      el.appendChild(span);
-    } catch { /* ignore */ }
+    try { updateTTTWidget(JSON.parse(e.data)); } catch { /* ignore */ }
   });
 
   // FE-11: only actual failures surface as status cards.
@@ -54,35 +45,104 @@ function connectStream() {
 }
 
 // ---------------------------------------------------------------------------
-// TTT header polling (FE-08) — 5s cycle for median/p95/baseline
+// Time-to-Triage header widget — the 120° arc speedometer (UI-UX §1.3,
+// image-2 redesign). Scale: human baseline at the far left, instant at the
+// far right, the 5.0s PRD target ticked on the arc; the median sits as a
+// marigold dot that slides as new tickets land. A judge reads "how fast"
+// in one glance, no arithmetic. Raw figures stay in mono underneath.
 // ---------------------------------------------------------------------------
+
+const _fmt = (ms) =>
+  ms == null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+
+// Arc geometry (SVG viewBox 0 0 150 74): 120° sweep from 150° (left, baseline)
+// over the top to 30° (right, instant).
+const ARC = { cx: 75, cy: 68, r: 62 };
+
+function _arcPoint(f) {
+  const theta = ((150 - 120 * f) * Math.PI) / 180;
+  return {
+    x: +(ARC.cx + ARC.r * Math.cos(theta)).toFixed(2),
+    y: +(ARC.cy - ARC.r * Math.sin(theta)).toFixed(2),
+  };
+}
+
+function _set(id, attrs) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+}
+
+let _lastFigures = {}; // survive queue-only SSE events between polls
+
+function updateTTTWidget(m) {
+  if (!m) return;
+  _lastFigures = { ..._lastFigures, ...m };
+
+  const { median_ttt_ms: median, p95_ttt_ms: p95,
+          human_baseline_ms: baseline, queue_depth: queue } = _lastFigures;
+
+  // --- arc: fill + median dot + 5s target tick + endpoint labels ---------
+  if (baseline > 0) {
+    const start = _arcPoint(0);
+    if (median != null) {
+      const f = Math.max(0, Math.min(1, 1 - median / baseline));
+      const dot = _arcPoint(f);
+      _set("ttt-arc-fill", {
+        d: `M ${start.x} ${start.y} A ${ARC.r} ${ARC.r} 0 0 1 ${dot.x} ${dot.y}`,
+      });
+      _set("ttt-arc-dot", { cx: dot.x, cy: dot.y });
+    }
+    // 5.0s PRD target tick (radial, r-6 → r+6)
+    const ft = Math.max(0, Math.min(1, 1 - 5000 / baseline));
+    const theta = ((150 - 120 * ft) * Math.PI) / 180;
+    const tickIn = {
+      x: +(ARC.cx + (ARC.r - 6) * Math.cos(theta)).toFixed(2),
+      y: +(ARC.cy - (ARC.r - 6) * Math.sin(theta)).toFixed(2),
+    };
+    const tickOut = {
+      x: +(ARC.cx + (ARC.r + 6) * Math.cos(theta)).toFixed(2),
+      y: +(ARC.cy - (ARC.r + 6) * Math.sin(theta)).toFixed(2),
+    };
+    _set("ttt-arc-tick", {
+      x1: tickIn.x, y1: tickIn.y, x2: tickOut.x, y2: tickOut.y,
+    });
+    _set("ttt-arc-label-target", {
+      x: +(ARC.cx + (ARC.r + 15) * Math.cos(theta)).toFixed(2),
+      y: +(ARC.cy - (ARC.r + 15) * Math.sin(theta)).toFixed(2) + 3,
+    });
+    const left = document.getElementById("ttt-arc-label-left");
+    if (left) left.textContent = _fmt(baseline);
+  }
+
+  // --- figures -------------------------------------------------------------
+  const big = document.getElementById("ttt-median");
+  if (big && median != null) big.textContent = _fmt(median);
+
+  const sub = document.getElementById("ttt-sub");
+  if (sub) {
+    if (baseline > 0 && median != null && median > 0) {
+      sub.textContent =
+        `vs ${_fmt(baseline)} human baseline · ${(baseline / median).toFixed(1)}× faster`;
+    } else if (baseline > 0) {
+      sub.textContent = `vs ${_fmt(baseline)} human baseline`;
+    }
+  }
+
+  const summary = document.getElementById("ttt-summary");
+  if (summary) {
+    summary.innerHTML =
+      `p95 <strong>${_fmt(p95)}</strong>` +
+      (queue != null ? ` · queue <strong>${queue}</strong>` : "");
+  }
+}
 
 function pollMetrics() {
   async function fetch_and_render() {
     try {
       const res = await fetch(`${window.CORE_URL}/api/metrics`);
       if (!res.ok) return;
-      const m = await res.json();
-
-      const fmt = (ms) =>
-        ms == null ? "—" : ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
-
-      const el = document.getElementById("ttt-summary");
-      if (!el) return;
-
-      // Preserve the .ttt-queue span written by the SSE handler above
-      const existingQueue = el.querySelector(".ttt-queue");
-      el.innerHTML =
-        `median <strong>${fmt(m.median_ttt_ms)}</strong>` +
-        ` · p95 <strong>${fmt(m.p95_ttt_ms)}</strong>` +
-        ` · baseline <strong>${fmt(m.human_baseline_ms)}</strong>`;
-      if (existingQueue) el.appendChild(existingQueue);
-      else if (m.queue_depth != null) {
-        const span = document.createElement("span");
-        span.className = "ttt-queue";
-        span.innerHTML = ` · queue <strong>${m.queue_depth}</strong>`;
-        el.appendChild(span);
-      }
+      updateTTTWidget(await res.json());
     } catch { /* silently ignore if core is down */ }
   }
   fetch_and_render();
