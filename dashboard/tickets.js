@@ -128,6 +128,14 @@ function renderTicketCard(ticket) {
 // ---------------------------------------------------------------------------
 
 function addTicket(ticket) {
+  // SSE replay is not deduplicated server-side: a fresh connection
+  // replays every event from seq 0 (main.py stream endpoint), and a
+  // reconnect replays from Last-Event-ID -- so ticket.created can arrive
+  // for a ticket we already hold (REST backfill or an earlier live event).
+  // The created payload is the OLDEST state for that id, so a duplicate
+  // must never be inserted; updateTicket() applies the newer states in
+  // seq order and converges to current.
+  if (tickets.some((t) => t.id === ticket.id)) return;
   tickets.unshift(ticket);
   document.querySelector("#ticket-list #empty-state")?.remove();
   // Cache any message metadata that happens to be on the ticket object
