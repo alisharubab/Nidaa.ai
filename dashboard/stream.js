@@ -113,8 +113,17 @@ function addStatusCard(data) {
   const stack = document.getElementById("status-stack");
   if (!stack) return;
 
-  // Track unintelligible count for the queue nav badge
-  if (data.status === "audio_unintelligible") {
+  const key = data.message_id || data.sender_hash || Date.now();
+
+  // SSE replay (fresh connect replays from seq 0) can redeliver a failure
+  // event we already rendered -- replace the existing card instead of
+  // stacking a duplicate DOM node under the same map key.
+  const existingCard = _statusCards.get(key);
+  if (existingCard) existingCard.remove();
+
+  // Track unintelligible count for the queue nav badge (only genuinely
+  // new cards -- a replayed event replaces its card and must not re-count)
+  if (!existingCard && data.status === "audio_unintelligible") {
     _unintelligibleCount++;
     const el = document.getElementById("count-unintelligible");
     if (el) el.textContent = _unintelligibleCount;
@@ -122,7 +131,6 @@ function addStatusCard(data) {
 
   const card = document.createElement("div");
   card.className = "status-card";
-  const key = data.message_id || data.sender_hash || Date.now();
   card.dataset.msgId = key;
   card.dataset.status = data.status || "";
 
