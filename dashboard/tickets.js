@@ -217,7 +217,14 @@ async function flagTicket(id) {
   } catch (err) { console.error("[tickets] flag failed:", err); }
 }
 
-// HXL export
+// HXL export (DATA-06 / DoD-9). Anchor+download instead of window.open:
+// popup blockers regularly eat window.open for non-user-visible navigation,
+// which would silently kill the export mid-demo.
 function exportHXL() {
-  window.open(`${window.CORE_URL}/api/export/hxl.csv`, "_blank");
+  const a = document.createElement("a");
+  a.href = `${window.CORE_URL}/api/export/hxl.csv`;
+  a.download = `nidaa-hxl-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
