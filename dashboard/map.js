@@ -26,13 +26,43 @@ let pinLayer;
 // ticketId → Leaflet marker reference (for future state updates / FE-09)
 const pinMap = new Map();
 
+// FE-10: offline tile cache. tools/fetch_tiles.py downloads zoom 6-9 OSM
+// tiles for the demo bbox into dashboard/tiles/. Probe one tile that the
+// cache always contains (z6 tile under the default view centre) and use
+// the local cache when it loads -- so the pitch demo renders the map with
+// zero network. Falls back to live OSM tiles when the cache is absent.
+function _probeLocalTiles() {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload  = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = "tiles/6/44/27.png"; // tile containing [26.5, 68.0] at z6
+  });
+}
+
+async function _addTileLayer() {
+  const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  if (await _probeLocalTiles()) {
+    L.tileLayer("tiles/{z}/{x}/{y}.png", {
+      attribution,
+      // cache stops at z9 -- above that Leaflet upscales the z9 tiles
+      // instead of requesting (missing) remote ones, keeping the demo
+      // fully offline while still allowing a little extra zoom.
+      maxNativeZoom: 9,
+      maxZoom: 11,
+    }).addTo(map);
+  } else {
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution,
+      maxZoom: 18,
+    }).addTo(map);
+  }
+}
+
 function initMap() {
   map = L.map("map").setView(PAKISTAN_FLOOD_BOUNDS.center, PAKISTAN_FLOOD_BOUNDS.zoom);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 18,
-  }).addTo(map);
+  _addTileLayer();
 
   // Tile desaturation so urgency pins are the loudest element (UI-UX §6.4).
   // Also handled in CSS (.leaflet-tile-pane filter) but repeated here for
