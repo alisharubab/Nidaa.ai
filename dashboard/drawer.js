@@ -85,15 +85,14 @@ function _renderDrawerContent(ticket) {
   const modality   = cached.modality    || ticket.modality    || null;
   const transcript = cached.raw_text    || ticket.raw_text    || null;
 
-  // Audio section. Three cases: player when we have the path, a loading
-  // hint when the backfill fetch is still in flight (modality unknown),
-  // and a genuine not-available note when the path is missing.
+  // Audio section. Three cases: the shared VoicePlayer (same waveform
+  // component as the feed cards) when we have the path, a loading hint
+  // when the backfill fetch is still in flight, and a genuine
+  // not-available note when the path is missing.
   const audioSection = (modality === "audio" && audioPath)
     ? `<div class="drawer-section">
         <div class="drawer-section-label">Audio</div>
-        <audio controls
-          src="${window.CORE_URL}/audio/${encodeURIComponent(audioPath.split(/[\/\\]/).pop())}"
-          class="drawer-audio"></audio>
+        <div data-drawer-player></div>
         ${(cached.audio_duration_s || ticket.audio_duration_s)
           ? `<span class="drawer-audio-dur t-mono">${Math.round(cached.audio_duration_s || ticket.audio_duration_s)}s voice note</span>`
           : ""}
@@ -208,4 +207,10 @@ function _renderDrawerContent(ticket) {
       </div>
     </div>
   `;
+
+  // Mount the shared voice player (same component as the feed cards)
+  const playerMount = drawer.querySelector("[data-drawer-player]");
+  if (playerMount && modality === "audio" && audioPath) {
+    playerMount.replaceWith(VoicePlayer.create(ticket, audioPath));
+  }
 }
