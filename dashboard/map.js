@@ -41,7 +41,10 @@ function _probeLocalTiles() {
 }
 
 async function _addTileLayer() {
-  const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  // CartoDB Positron: light basemap with crisp English labels — the
+  // localized labels on OSM-standard tiles read as blurry clutter next
+  // to the redesigned white cards.
+  const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
   if (await _probeLocalTiles()) {
     L.tileLayer("tiles/{z}/{x}/{y}.png", {
       attribution,
@@ -52,8 +55,9 @@ async function _addTileLayer() {
       maxZoom: 11,
     }).addTo(map);
   } else {
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
       attribution,
+      subdomains: "abcd",
       maxZoom: 18,
     }).addTo(map);
   }
