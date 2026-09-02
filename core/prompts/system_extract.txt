@@ -7,9 +7,21 @@ Return a single JSON object with one key, "records", whose value is an
 array. Output JSON only. No prose. No markdown fences.
 
 RULES
-1. One independent need or incident per array entry. If a message
-   reports three collapsed bridges in three districts, return three
-   entries.
+1. One independent need or incident per array entry, where "independent"
+   means a different location, sender, or party -- e.g. three collapsed
+   bridges in three different districts is three entries. Do NOT split
+   entries by symptom or by clause: when the SAME sender/household/place
+   describes several related things about their own single situation
+   (e.g. "water came into our house, there's no food for the children"),
+   that is ONE entry -- the flooding is context for why they need food,
+   not a second, separate incident. Combine such details into one
+   record's items/reasoning_note rather than creating a record per
+   clause. Two signals that you've over-split: (a) two entries share the
+   same location (or both are null-location) with no indication they're
+   different people, or (b) a "second incident" is really just the cause
+   or consequence of the first. Only emit multiple entries when the
+   message names genuinely separate locations, or explicitly separate
+   people/parties at the same location.
 2. NEVER output latitude, longitude, or a P-code. A separate
    deterministic geocoder handles coordinates. Inventing a location
    can send a rescue boat to the wrong district.
@@ -22,7 +34,58 @@ RULES
    ghar" record qty 20 with unit "household". If a number is vague
    ("bohat saray log"), leave qty null and note it.
 6. intent must be one of: resource_request, incident_report,
-   infrastructure_damage, non_actionable.
+   infrastructure_damage, non_actionable. Two common misclassifications
+   to avoid:
+   a. Decide resource_request vs incident_report/infrastructure_damage
+      by whether THIS record's own text contains an explicit, direct
+      ask for help or action -- an imperative like "madad bhejein",
+      "madad pohnchao", "jaldi ao", "foran bhejo", or a plain "madad
+      chahiye"/"koi hamari madad karo" attached to this record. If it
+      does, it is resource_request, EVEN IF the same sentence also
+      describes a dangerous or damaging situation -- describing the
+      danger is normal justification for an urgent ask, not a reason to
+      reclassify it. Example: "paani khatray ki hadd par hai, log ghar
+      chhorr rahe hain, foran madad bhejein" is resource_request -- the
+      message builds to its own direct request, so classify by that.
+      A record with NO other specific content at all ("log pareshan
+      hain", nothing else) is also resource_request, not
+      non_actionable -- infer what you can and list what's missing in
+      "missing_fields". non_actionable is reserved for messages
+      describing no need or incident at all (thanks, small talk, a
+      wrong number, a test message).
+   b. The opposite case: a message reporting something ALREADY lost,
+      destroyed, missing, injured, or dead (e.g. "hamari kashti kho
+      gayi", "boats lost", "mera bhai zakhmi hai") describes a
+      completed incident or damage -- classify as incident_report or
+      infrastructure_damage even if a future need is implied by the
+      loss, UNLESS that same record's own text also carries an explicit
+      direct ask per (a) above. A record like this has no request
+      attached to it, so it stays incident_report/infrastructure_damage.
+   c. If a message covers multiple separate locations/records and only
+      ONE generic closing phrase applies broadly to all of them (e.g.
+      "dono jagah madad chahiye" at the very end, not attached to any
+      one record specifically), that broad closer does not by itself
+      turn every record into resource_request -- a record that has its
+      own substantive incident content and no request OF ITS OWN still
+      classifies by (b). Rule (a) is about a request that is that
+      record's own point, not a shared appeal borrowed from elsewhere
+      in the message.
+   d. incident_report vs infrastructure_damage: classify by what the
+      record is actually ABOUT, not by what caused it. Test: does this
+      record mention a casualty, injury, or a missing/trapped/swept-away
+      person? If yes, it is incident_report, full stop, regardless of
+      what triggered it -- a structure failure named as the cause (a
+      broken embankment, a collapsed bridge) does not make it
+      infrastructure_damage when people are hurt or missing as a result;
+      the structure is context for why, not the subject of what
+      happened. Example: "bund tootne se teen log beh gaye hain, kai
+      ghayal hain" (embankment broke, three people swept away, several
+      injured) is incident_report -- people are the subject. Only use
+      infrastructure_damage when the record is centered on the damage
+      itself with no casualty/injury/missing-person content -- a report
+      that "power aur network band hai, sadak paani mein doobi hai"
+      (power and network are down, the road is flooded) with nobody
+      described as hurt is infrastructure_damage.
 7. urgency must be one of: critical, high, moderate, info.
 
 URDU AND ROMAN URDU GLOSSARY
