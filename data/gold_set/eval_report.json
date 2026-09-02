@@ -1,13 +1,13 @@
 {
-  "run_at": "2026-09-01T19:31:49",
+  "run_at": "2026-09-02T20:42:01",
   "n_total": 10,
   "n_scored": 10,
   "n_skipped": 0,
   "skipped": [],
   "accuracy": {
-    "overall": 0.6,
-    "district": 0.9,
-    "intent": 0.6,
+    "overall": 0.0,
+    "district": 0.0,
+    "intent": 0.0,
     "unintelligible_outcome": null,
     "n": 10,
     "n_extracted": 10,
@@ -15,9 +15,9 @@
   },
   "tiers": {},
   "ttt_ms": {
-    "median": 2542.3,
-    "p95": 4503.1,
-    "n": 14
+    "median": 10262.0,
+    "p95": 11405.6,
+    "n": 2
   },
   "cases": [
     {
@@ -29,32 +29,25 @@
       "error_code": null,
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
+      "district_ok": false,
       "intent_ok": false,
       "pass": false,
       "ttt_ms": [
-        2755.3,
-        3588.5,
-        4503.1
+        9118.3,
+        11405.6
       ],
       "tickets": [
         {
           "district": "Larkana",
           "intent": "resource_request",
-          "urgency": "high",
+          "urgency": "moderate",
           "pcode": "PK713"
         },
         {
           "district": "Sukkur",
           "intent": "resource_request",
-          "urgency": "high",
+          "urgency": "moderate",
           "pcode": "PK723"
-        },
-        {
-          "district": "Multan",
-          "intent": "non_actionable",
-          "urgency": "info",
-          "pcode": "PK622"
         }
       ]
     },
@@ -63,230 +56,135 @@
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
       "district_ok": false,
       "intent_ok": false,
       "pass": false,
-      "ttt_ms": [
-        2509.9,
-        2574.7
-      ],
-      "tickets": [
-        {
-          "district": null,
-          "intent": "resource_request",
-          "urgency": "moderate",
-          "pcode": null
-        },
-        {
-          "district": null,
-          "intent": "resource_request",
-          "urgency": "high",
-          "pcode": null
-        }
-      ]
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t03",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
-      "intent_ok": true,
-      "pass": true,
-      "ttt_ms": [
-        1897.1
-      ],
-      "tickets": [
-        {
-          "district": "Muzaffargarh",
-          "intent": "resource_request",
-          "urgency": "critical",
-          "pcode": "PK623"
-        }
-      ]
+      "district_ok": false,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t04",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
-      "intent_ok": true,
-      "pass": true,
-      "ttt_ms": [
-        2040.6
-      ],
-      "tickets": [
-        {
-          "district": "Shaheed Benazir Abad",
-          "intent": "infrastructure_damage",
-          "urgency": "moderate",
-          "pcode": "PK719"
-        }
-      ]
+      "district_ok": false,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t05",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
-      "intent_ok": true,
-      "pass": true,
-      "ttt_ms": [
-        2310.9
-      ],
-      "tickets": [
-        {
-          "district": "Rajanpur",
-          "intent": "incident_report",
-          "urgency": "critical",
-          "pcode": "PK629"
-        }
-      ]
+      "district_ok": false,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t06",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
-      "intent_ok": true,
-      "pass": true,
-      "ttt_ms": [
-        810.9
-      ],
-      "tickets": [
-        {
-          "district": null,
-          "intent": "non_actionable",
-          "urgency": "info",
-          "pcode": null
-        }
-      ]
+      "district_ok": false,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t07",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
+      "district_ok": false,
       "intent_ok": false,
       "pass": false,
-      "ttt_ms": [
-        2830.8
-      ],
-      "tickets": [
-        {
-          "district": "Dera Ghazi Khan",
-          "intent": "incident_report",
-          "urgency": "moderate",
-          "pcode": "PK607"
-        }
-      ]
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t08",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
-      "intent_ok": true,
-      "pass": true,
-      "ttt_ms": [
-        1384.9
-      ],
-      "tickets": [
-        {
-          "district": "Khairpur",
-          "intent": "resource_request",
-          "urgency": "high",
-          "pcode": "PK711"
-        }
-      ]
+      "district_ok": false,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t09",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
+      "district_ok": false,
       "intent_ok": false,
       "pass": false,
-      "ttt_ms": [
-        2875.5,
-        3628.8
-      ],
-      "tickets": [
-        {
-          "district": "Badin",
-          "intent": "resource_request",
-          "urgency": "moderate",
-          "pcode": "PK701"
-        },
-        {
-          "district": "Ghotki",
-          "intent": "incident_report",
-          "urgency": "moderate",
-          "pcode": "PK705"
-        }
-      ]
+      "ttt_ms": [],
+      "tickets": []
     },
     {
       "id": "t10",
       "modality": "text",
       "tier": null,
       "expected_outcome": "extracted",
-      "status": "extracted",
-      "error_code": null,
+      "status": "failed",
+      "error_code": "RATE_LIMITED",
       "skipped": false,
       "skip_reason": null,
-      "district_ok": true,
-      "intent_ok": true,
-      "pass": true,
-      "ttt_ms": [
-        1761.3
-      ],
-      "tickets": [
-        {
-          "district": "Charsadda",
-          "intent": "infrastructure_damage",
-          "urgency": "moderate",
-          "pcode": "PK506"
-        }
-      ]
+      "district_ok": false,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [],
+      "tickets": []
     }
   ]
 }
