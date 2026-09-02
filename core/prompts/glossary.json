@@ -7,6 +7,9 @@
   "dawai khatam ho gayi": "medical supply request",
   "raabta nahi ho raha": "communications blackout, treat as incident report",
   "madad chahiye": "generic help request, infer specifics from context",
+  "madad pohnchao": "generic help request (imperative), same as madad chahiye -- resource_request, not non_actionable",
+  "log pareshan hain": "distress call, treat as an actionable generic help request",
   "phansay huay hain": "people trapped, critical",
-  "bijli nahi hai": "infrastructure damage, moderate unless combined with a medical need"
+  "bijli nahi hai": "infrastructure damage, moderate unless combined with a medical need",
+  "kho gaya": "loss report (property/boats/belongings already gone) -- incident_report or infrastructure_damage, not resource_request"
 }
