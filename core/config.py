@@ -27,3 +27,9 @@ AUDIO_TTL_HOURS = int(os.getenv("AUDIO_TTL_HOURS", "72"))
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
 
 DB_PATH = os.getenv("DB_PATH", "nidaa.db")
+
+# Empty locally (SQLite, matches docs/ARCHITECTURE.md's WAL-mode rationale for
+# the demo/offline path) -- set by Render to a managed Postgres connection
+# string for the cloud deployment. db.py picks the backend from this alone.
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+IS_POSTGRES = bool(DATABASE_URL)
