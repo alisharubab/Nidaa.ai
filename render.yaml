@@ -42,8 +42,16 @@ services:
           property: connectionString
       - key: DEMO_MODE
         value: "false"
+      # Private-network reference, not the public URL: Render assigns the
+      # public *.onrender.com subdomain with an unpredictable suffix on name
+      # collision (bit us on nidaa-core itself), so a hardcoded guess here
+      # would silently break. fromService resolves to "host:port" on the
+      # shared private network instead -- self-healing on every redeploy.
+      # config.py prepends http:// since this comes back scheme-less.
       - key: INGEST_URL
-        value: https://nidaa-ingest.onrender.com
+        fromService:
+          name: nidaa-ingest
+          property: hostport
       - key: STT_MODEL_PRIMARY
         value: whisper-large-v3-turbo
       - key: STT_MODEL_ESCALATION
@@ -79,10 +87,17 @@ services:
     startCommand: node index.js
     healthCheckPath: /health
     envVars:
+      # Same private-network reference as nidaa-core's INGEST_URL above, and
+      # for the same reason -- self-healing against Render's unpredictable
+      # public-subdomain suffixing instead of a hardcoded guess.
       - key: CORE_URL
-        value: https://nidaa-core.onrender.com
+        fromService:
+          name: nidaa-core
+          property: hostport
       - key: INGEST_URL
-        value: https://nidaa-ingest.onrender.com
+        fromService:
+          name: nidaa-ingest
+          property: hostport
       # greenapi (HTTP polling) is the Render-deployable transport -- it
       # needs no persistent local auth state, unlike Baileys' direct-socket
       # pairing (useMultiFileAuthState), which won't survive this service's
@@ -105,5 +120,17 @@ services:
     # dashboard/ still opens from file:// unmodified for local dev
     # (dashboard/CLAUDE.md's "no build step" rule is about local dev tooling,
     # not what Render's own deploy step is allowed to do).
-    buildCommand: echo "window.NIDAA_CORE_URL = \"https://nidaa-core.onrender.com\";" > config.js
+    #
+    # NIDAA_CORE_PUBLIC_URL is set manually below (like the other secrets),
+    # not via fromService: the dashboard runs in the visitor's browser, which
+    # needs core's real public https://...onrender.com URL -- fromService
+    # only resolves Render's *private*-network host:port, unreachable from a
+    # browser. After nidaa-core's first deploy, copy its actual public URL
+    # (Render may have appended a suffix on a name collision -- check the
+    # nidaa-core service page) into this env var, then manually redeploy
+    # nidaa-dashboard once.
+    buildCommand: echo "window.NIDAA_CORE_URL = \"$NIDAA_CORE_PUBLIC_URL\";" > config.js
     staticPublishPath: .
+    envVars:
+      - key: NIDAA_CORE_PUBLIC_URL
+        sync: false
