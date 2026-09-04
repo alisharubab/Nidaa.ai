@@ -16,8 +16,16 @@ STT_MODEL_ESCALATION = os.getenv("STT_MODEL_ESCALATION", "whisper-large-v3")
 LLM_MODEL_PRIMARY = os.getenv("LLM_MODEL_PRIMARY", "openai/gpt-oss-120b")
 LLM_MODEL_FALLBACK = os.getenv("LLM_MODEL_FALLBACK", "qwen/qwen3.6-27b")
 
-CORE_URL = os.getenv("CORE_URL", "http://127.0.0.1:8000")
-INGEST_URL = os.getenv("INGEST_URL", "http://127.0.0.1:3000")
+def _with_scheme(url: str) -> str:
+    """Render's fromService (render.yaml) resolves to a private-network
+    "host:port" with no scheme -- prepend http:// so httpx accepts it.
+    Values already carrying a scheme (local dev's default, or a plain
+    https:// URL) pass through unchanged."""
+    return url if url.startswith(("http://", "https://")) else f"http://{url}"
+
+
+CORE_URL = _with_scheme(os.getenv("CORE_URL", "http://127.0.0.1:8000"))
+INGEST_URL = _with_scheme(os.getenv("INGEST_URL", "http://127.0.0.1:3000"))
 
 STT_RATE_LIMIT_RPM = int(os.getenv("STT_RATE_LIMIT_RPM", "15"))
 LLM_RATE_LIMIT_RPM = int(os.getenv("LLM_RATE_LIMIT_RPM", "25"))
