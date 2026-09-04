@@ -5,15 +5,17 @@
 import json
 from datetime import datetime, timezone
 
+from config import IS_POSTGRES
+
 
 def append_event(conn, kind: str, payload: dict) -> int:
     """Insert one event row on the given (open, in-transaction) connection.
     Returns the new event's seq. Caller controls the transaction/commit."""
-    cur = conn.execute(
-        "INSERT INTO events (kind, payload, created_at) VALUES (?, ?, ?)",
-        (kind, json.dumps(payload), datetime.now(timezone.utc).isoformat()),
-    )
-    return cur.lastrowid
+    sql = "INSERT INTO events (kind, payload, created_at) VALUES (?, ?, ?)"
+    params = (kind, json.dumps(payload), datetime.now(timezone.utc).isoformat())
+    if IS_POSTGRES:
+        return conn.execute(sql + " RETURNING seq", params).fetchone()["seq"]
+    return conn.execute(sql, params).lastrowid
 
 
 def replay_since(conn, last_seq: int = 0):
