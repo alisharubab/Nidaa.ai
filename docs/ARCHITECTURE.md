@@ -170,4 +170,4 @@ Documented so a Day-3 "why don't we just add X" doesn't turn into scope creep. S
 * Semantic dedup (embeddings) replaces `dedupe.py`'s key-based cascade without touching any other stage.
 * Union-council (`#adm3`) geocoding is a new tier in `geocode.py`'s cascade, slotted before the "no match" fallback.
 * WhatsApp Business Cloud API migration replaces `ingest/index.js`'s transport only — the `/internal/ingest` and `/internal/reply` contract does not need to change.
-* Postgres/PostGIS migration replaces `db.py` only, behind the same DAO function signatures.
+* Postgres/PostGIS migration replaces `db.py` only, behind the same DAO function signatures. **The Postgres half of this was pulled forward for Render deployment** (see `docs/TRD.md` section 2's Postgres-support addendum) — `db.py` supports both SQLite and Postgres today, picked by `DATABASE_URL`. PostGIS, spatial clustering, and the live 3W feed (PRD §16) remain genuinely Phase 3.
