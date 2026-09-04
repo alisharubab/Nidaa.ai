@@ -79,7 +79,7 @@ DEMO_MODE=false
 
 ---
 
-## 2. Database Schema (SQLite, WAL)
+## 2. Database Schema (SQLite, WAL — Postgres also supported, see addendum)
 
 ```sql
 PRAGMA journal_mode=WAL;
@@ -187,6 +187,8 @@ CREATE INDEX idx_messages_status ON messages(status);
 > **Constraint-enforcement note (post-v1.0.0, added during implementation).** Every "enum-like" TEXT column in v1.0.0 (state/modality/status/intent/urgency/geocode_method/verification_status/dispatcher_verdict/kind) was documented in a comment but never actually validated by SQLite — a typo or a stray capital letter (e.g. `"Critical"` instead of `"critical"`) would silently break every `WHERE urgency = 'critical'` filter with no error anywhere. Added `CHECK` constraints enforcing every documented enum, plus range checks (`extraction_conf` 0-1, `people_affected`/`casualties` >= 0, `audio_duration_s` > 0, `ttt_ms` >= 0) and JSON-shape checks (`json_valid()`, SQLite 3.38+) on `items_json`, `missing_fields`, and `events.payload`.
 >
 > **`tickets.geocode_score` scale, resolved.** v1.0.0 gave this column two incompatible scales depending on match method — `alias`/`exact` matches got a literal `1.0`, `fuzzy` matches got a raw `rapidfuzz` `WRatio` (0-100). Chosen fix, for scalability rather than just hackathon correctness: **`geocode_score` is always 0-1**, regardless of method. `fuzzy` matches now store `WRatio / 100.0` (section 4.5 updated accordingly). The reason this matters beyond tidiness: a mixed scale is fine for one dashboard confidence bar today, but breaks the moment anything compares scores across methods — a future `?geocode_score>=0.9` filter, a sort-by-confidence view, or Phase 2's "full P-code gazetteer integration" adding yet another matching method with its own native scale. One normalized scale now means every future geocoding method just needs to map into 0-1 once, rather than every future *consumer* of this column needing to know which method produced each row before it can compare two scores.
+>
+> **Postgres-support addendum (post-v1.0.0, added for Render deployment).** `docs/ARCHITECTURE.md`'s Phase 3 roadmap already named "Postgres/PostGIS migration replaces `db.py` only, behind the same DAO function signatures" — this pulls just the Postgres half of that forward, for deployment, not the PostGIS/spatial-clustering half (still genuinely Phase 3). `core/db.py` now picks the backend from `DATABASE_URL` alone: unset means SQLite (unchanged default, same WAL pragmas, same local/offline-demo path), set means Postgres (Render's managed database). The schema above is identical in shape on both backends — same tables, columns, CHECK constraints, FKs — only the DDL syntax differs (`SERIAL` instead of `INTEGER PRIMARY KEY AUTOINCREMENT`, no `PRAGMA` statements, `json_valid(x)` replaced with a `::json` cast that rejects invalid JSON by raising instead of returning 0). Every DAO function signature in `db.py` is unchanged; a thin connection/cursor shim translates `?` placeholders to psycopg2's `%s` and makes `RealDictCursor` rows behave like `sqlite3.Row` (`row["col"]`, `dict(row)`) so nothing calling into `db.py` — including `main.py` and `events.py` — needed to change for the new backend, only for the two `cur.lastrowid` call sites (`insert_message`, `insert_ticket`, `events.append_event`), which now branch on `IS_POSTGRES` to use `RETURNING id`/`RETURNING seq` instead (psycopg2 cursors don't have `.lastrowid`).
 
 ---
 
@@ -232,6 +234,15 @@ POST /internal/consent/revoke
 { "ok": true }
 ```
 Behaviour: sets `state=revoked`, `revoked_at=now`, and purges that sender's stored audio files and transcript text from `messages` (PRD §3.1/§3.4). Called by the daemon when it sees `BAND` or `STOP` from a sender, before anything else in the message-handling flow (TRD §6, step 4).
+
+> **Audio-forwarding addendum (post-v1.0.0, added for Render deployment).** The original `audio_path` field assumed `ingest/` and `core/` share a filesystem (true on one dev machine, false once they're separate Render services with separate disks -- a path on ingest's disk means nothing to core's `preflight`/`stt` stages, which read the file by path). Two new optional fields close that gap without changing anything about single-machine dev:
+>
+> ```
+> "audio_data_b64": "<base64 of the WAV file>",
+> "audio_filename": "3EB0.wav"
+> ```
+>
+> Behaviour: if both are present, core decodes and writes its own copy under its own `storage/audio/` (filename is re-derived via `Path(...).name`, since this is now a real network boundary and the value is untrusted input) and uses that local path for the rest of the pipeline, ignoring whatever `audio_path` ingest sent. If either is missing (text messages, or a topology where ingest/core still share a disk), core falls back to the raw `audio_path` as before. `ingest/index.js` always sends both for audio messages now, so this is the live path, not a fallback edge case.
 
 > **Readback-reply addendum (post-v1.0.0, added during implementation, CORE-22/23).** Same class of gap as the consent addendum above: section 6 says the daemon routes `1`/`2` replies to "the readback handler," but never says what that handler calls. A bare `1` or `2` carries no ticket id, so core has to infer which ticket it's answering:
 
