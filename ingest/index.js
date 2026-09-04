@@ -12,6 +12,7 @@
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 const crypto = require("crypto");
 const http = require("http");
+const fs = require("fs");
 
 const { checkConsent, handleControlKeyword } = require("./consent");
 const { OutboundQueue } = require("./outbound");
@@ -92,12 +93,34 @@ async function handleInbound({ endpointId, messageId, text, voice }) {
   }
 
   // Step 6: POST /internal/ingest (TRD section 3.1)
+  //
+  // audio_data_b64/audio_filename addendum (post-v1.0.0, added for Render
+  // deploy): ingest/ and core/ run as separate Render services with
+  // separate disks, so a bare `audio_path` string from ingest's filesystem
+  // means nothing to core's pipeline (preflight/stt read the file by path).
+  // Sending the bytes alongside the path lets core save its own copy under
+  // its own storage/audio/ and rewrite audio_path to that local copy --
+  // same behaviour locally (one code path for both topologies), just an
+  // extra harmless round-trip when ingest/core happen to share a disk.
+  let audioDataB64 = null;
+  let audioFilename = null;
+  if (audioPath) {
+    try {
+      audioDataB64 = fs.readFileSync(audioPath).toString("base64");
+      audioFilename = require("path").basename(audioPath);
+    } catch (err) {
+      console.error(`[ingest] could not read ${audioPath} to forward to core:`, err.message);
+    }
+  }
+
   const payload = {
     wa_message_id: messageId,
     sender_hash: sHash,
     phone_tail: tail,
     modality,
     audio_path: audioPath,
+    audio_data_b64: audioDataB64,
+    audio_filename: audioFilename,
     audio_duration_s: audioDurationS,
     text: text || null,
     received_at: new Date().toISOString(),
@@ -128,6 +151,19 @@ async function handleInbound({ endpointId, messageId, text, voice }) {
 
 function startReplyServer() {
   const server = http.createServer(async (req, res) => {
+    // GET /health: real health check, and doubles as a keepalive target for
+    // an external pinger (e.g. UptimeRobot/cron-job.org) on Render's free
+    // tier -- Render spins a free web service down after 15 minutes with no
+    // *inbound* traffic, and this service's own outbound Green API polling
+    // loop doesn't count as inbound, so without something pinging it, the
+    // WhatsApp bridge silently stops receiving messages. Upgrading to a paid
+    // instance type removes the spin-down entirely; see README's deployment
+    // section for both options.
+    if (req.method === "GET" && req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", transport: TRANSPORT }));
+      return;
+    }
     if (req.method !== "POST" || req.url !== "/internal/reply") {
       res.writeHead(404);
       res.end();
@@ -155,7 +191,11 @@ function startReplyServer() {
       }
     });
   });
-  const port = new URL(INGEST_URL).port || 3000;
+  // Render (and most PaaS hosts) assign the listen port dynamically via
+  // $PORT and route their own public HTTPS URL to it -- INGEST_URL's own
+  // port (or the 3000 default) only applies to plain local/VM dev where
+  // nothing else picks the port for us.
+  const port = process.env.PORT || new URL(INGEST_URL).port || 3000;
   server.listen(port, () => {
     console.log(`[ingest] reply server listening on port ${port}`);
   });
