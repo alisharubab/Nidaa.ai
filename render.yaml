@@ -51,6 +51,7 @@ services:
       - key: INGEST_URL
         fromService:
           name: nidaa-ingest
+          type: web
           property: hostport
       - key: STT_MODEL_PRIMARY
         value: whisper-large-v3-turbo
@@ -93,10 +94,12 @@ services:
       - key: CORE_URL
         fromService:
           name: nidaa-core
+          type: web
           property: hostport
       - key: INGEST_URL
         fromService:
           name: nidaa-ingest
+          type: web
           property: hostport
       # greenapi (HTTP polling) is the Render-deployable transport -- it
       # needs no persistent local auth state, unlike Baileys' direct-socket
