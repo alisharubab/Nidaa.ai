@@ -13,6 +13,7 @@
 # just-arrived-via-SSE) tickets can play their source recording.
 
 import asyncio
+import base64
 import csv
 import io
 import json
@@ -49,9 +50,12 @@ app.add_middleware(
 )
 
 # Serves storage/audio/*.wav directly so the dashboard's audio player can
-# fetch a ticket's source recording. Path is relative to core/'s cwd (where
-# uvicorn is run from), same convention as ingest/'s own audio_path values.
-app.mount("/audio", StaticFiles(directory="../storage/audio"), name="audio")
+# fetch a ticket's source recording. Resolved from __file__, not cwd, so it
+# doesn't depend on whether the process was launched from core/ or the repo
+# root (Render's start command isn't guaranteed to `cd core` first).
+_AUDIO_DIR = Path(__file__).parent.parent / "storage" / "audio"
+_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/audio", StaticFiles(directory=str(_AUDIO_DIR)), name="audio")
 
 pipeline_queue: PipelineQueue | None = None
 district_index: dict = {}
@@ -318,10 +322,31 @@ def _parse_iso(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
+def _save_forwarded_audio(audio_filename: str | None, audio_data_b64: str | None) -> str | None:
+    """audio_data_b64/audio_filename addendum (docs/TRD.md 3.1, post-v1.0.0):
+    ingest/ and core/ can run as separate Render services with separate
+    disks, so core saves its own copy of the audio bytes ingest/ forwarded
+    rather than trusting ingest's local audio_path to mean anything here.
+    Returns the path to hand to the pipeline, or None if nothing was sent
+    (text messages, or ingest/core sharing a disk with audio_path already
+    valid -- kept as a fallback for that case only)."""
+    if not audio_data_b64 or not audio_filename:
+        return None
+    # Path(...).name strips any directory components -- this endpoint is now
+    # a real network boundary (a separate Render service calls it), so the
+    # filename from the request body is untrusted input, not an internal value.
+    safe_name = Path(audio_filename).name
+    dest = _AUDIO_DIR / safe_name
+    dest.write_bytes(base64.b64decode(audio_data_b64))
+    return str(dest)
+
+
 @app.post("/internal/ingest")
 async def internal_ingest(request: Request):
     body = await request.json()
     t_received = body.get("received_at") or _now()
+    audio_path = _save_forwarded_audio(body.get("audio_filename"), body.get("audio_data_b64")) \
+        or body.get("audio_path")
     with db.get_connection() as conn:
         message_id = db.insert_message(
             conn,
@@ -329,7 +354,7 @@ async def internal_ingest(request: Request):
             sender_hash=body["sender_hash"],
             phone_tail=body.get("phone_tail"),
             modality=body["modality"],
-            audio_path=body.get("audio_path"),
+            audio_path=audio_path,
             audio_duration_s=body.get("audio_duration_s"),
             raw_text=body.get("text"),
             received_at=t_received,
