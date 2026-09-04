@@ -95,6 +95,28 @@ Set `DEMO_MODE=true` in `.env` and use `POST /api/simulate` to inject a gold-set
 
 ---
 
+## Deploying to Render
+
+`render.yaml` is a [Blueprint](https://render.com/docs/blueprint-spec) that provisions all four pieces in one go: a managed Postgres database, and web services for `core/`, `ingest/`, and `dashboard/`.
+
+**Steps:**
+1. Push this repo to GitHub (Render Blueprints deploy from a connected repo).
+2. In the Render dashboard: **New +** → **Blueprint** → pick this repo. Render reads `render.yaml` and shows the four resources it's about to create.
+3. You'll be prompted for the secrets marked `sync: false` in `render.yaml`: `GROQ_API_KEY`, `GREEN_API_ID_INSTANCE`, `GREEN_API_TOKEN`, `SENDER_HASH_SALT`. Same values as your local `.env`.
+4. Apply. Render provisions `nidaa-db` (Postgres), then builds and deploys `nidaa-core`, `nidaa-ingest`, and `nidaa-dashboard`.
+
+**What changes vs. local dev, and why:**
+* `core/db.py` picks Postgres automatically once Render sets `DATABASE_URL` — same DAO functions, same schema shape, nothing to configure. Locally, with `DATABASE_URL` unset, it's still plain SQLite. See `docs/TRD.md` section 2's Postgres-support addendum.
+* `ingest/` and `core/` run as separate Render services with separate disks, so a voice note's audio bytes are forwarded from ingest to core over `/internal/ingest` (base64) rather than passed as a shared file path — see `docs/TRD.md` section 3.1's audio-forwarding addendum. This is transparent; nothing to configure.
+* `dashboard/config.js` is a checked-in empty placeholder; Render's static-site build command overwrites it with the real `nidaa-core` URL before publishing. Opening `dashboard/index.html` locally via `file://` is completely unaffected.
+
+**Two things worth knowing before you rely on this for a live demo:**
+* **`nidaa-ingest` is a background poller, not a request/response service** — it polls Green API for new WhatsApp messages roughly once a second. Render's free tier spins a web service down after 15 minutes with *no inbound HTTP traffic*, and that outbound polling doesn't count as inbound — so on the free plan, the WhatsApp bridge silently stops receiving messages 15 minutes after the last inbound hit. Two fixes, pick one: (a) upgrade `nidaa-ingest` to a paid instance type in the Render dashboard (removes spin-down entirely), or (b) point a free external uptime pinger (e.g. [UptimeRobot](https://uptimerobot.com), [cron-job.org](https://cron-job.org)) at `https://nidaa-ingest.onrender.com/health` every ~10 minutes to keep it awake. `core/` and `dashboard/` don't have this problem the same way — they only need to be awake when someone's actually using the dashboard.
+* **`core/`'s free-tier `storage/audio/` is ephemeral** — it resets on restart/redeploy. This matches the app's own 72h audio-retention design (`docs/TRD.md` 3.1) rather than being a new gap, but if you want audio to survive a Render restart, add a persistent disk (commented-out block already in `render.yaml`) on a paid instance type.
+* Per `docs/TRD.md` section 10's Demo Resilience Plan, `POST /api/simulate` (behind `DEMO_MODE=true`) works against the deployed `nidaa-core` exactly as it does locally, independent of whether `nidaa-ingest`/WhatsApp are reachable at all.
+
+---
+
 ## Working as a team
 
 Two people, three runtimes. The short version — full detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
