@@ -113,6 +113,7 @@ async def readback_reply(request: Request):
             return {"ok": True, "ticket_id": None}
         db.update_verification(conn, ticket["id"], "user_confirmed" if reply == "1" else "user_disputed")
 
+    await _fire_reply(sender_hash, "readback_ack", {"confirmed": reply == "1"})
     return {"ok": True, "ticket_id": ticket["id"]}
 
 
