@@ -18,8 +18,16 @@ const { checkConsent, handleControlKeyword } = require("./consent");
 const { OutboundQueue } = require("./outbound");
 const { render } = require("./templates");
 
-const CORE_URL = process.env.CORE_URL || "http://127.0.0.1:8000";
-const INGEST_URL = process.env.INGEST_URL || "http://127.0.0.1:3000";
+// Render's fromService (render.yaml) resolves to a private-network
+// "host:port" with no scheme -- prepend http:// so `fetch()`/`new URL()`
+// both accept it. Values already carrying a scheme (local dev's
+// 127.0.0.1 default, or a plain https:// URL) pass through unchanged.
+function withScheme(url) {
+  return /^https?:\/\//.test(url) ? url : `http://${url}`;
+}
+
+const CORE_URL = withScheme(process.env.CORE_URL || "http://127.0.0.1:8000");
+const INGEST_URL = withScheme(process.env.INGEST_URL || "http://127.0.0.1:3000");
 const SENDER_HASH_SALT = process.env.SENDER_HASH_SALT || "nidaa-default-salt";
 const TRANSPORT = (process.env.INGEST_TRANSPORT || "whatsapp").toLowerCase();
 
