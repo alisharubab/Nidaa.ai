@@ -79,17 +79,40 @@ const VoicePlayer = (() => {
     return `${m}:${String(r).padStart(2, "0")}`;
   }
 
+  let _rafId = null;
+
   function _notifyAll() {
     for (const fn of _listeners) fn();
   }
 
-  _audio.addEventListener("timeupdate", _notifyAll);
-  _audio.addEventListener("play", _notifyAll);
-  _audio.addEventListener("pause", _notifyAll);
+  function _onTick() {
+    _notifyAll();
+    if (!_audio.paused && !Number.isNaN(_audio.duration)) {
+      _rafId = requestAnimationFrame(_onTick);
+    } else {
+      _rafId = null;
+    }
+  }
+
+  function _startLoop() {
+    if (!_rafId) _rafId = requestAnimationFrame(_onTick);
+  }
+
+  _audio.addEventListener("play", () => {
+    _startLoop();
+    _notifyAll();
+  });
+  _audio.addEventListener("pause", () => {
+    if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+    _notifyAll();
+  });
   _audio.addEventListener("ended", () => {
+    if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
     _currentMsgId = null;
     _notifyAll();
   });
+  _audio.addEventListener("timeupdate", _notifyAll);
+  _audio.addEventListener("loadedmetadata", _notifyAll);
 
   /**
    * Build a player element for a ticket's voice note.
@@ -188,19 +211,19 @@ const VoicePlayer = (() => {
     async function togglePlay() {
       if (isThisPlaying()) {
         _audio.pause();
-        sync();
       } else {
-        if (_currentMsgId !== messageId || _audio.src !== url) {
+        if (_currentMsgId !== messageId) {
           _audio.src = url;
           _currentMsgId = messageId;
+          _audio.currentTime = 0;
         }
         try {
           await _audio.play();
-          sync();
         } catch (err) {
           console.warn("[player] playback failed:", err.message);
         }
       }
+      _notifyAll();
     }
 
     btn.addEventListener("click", (e) => {
@@ -215,13 +238,15 @@ const VoicePlayer = (() => {
       const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const dur = total();
       if (dur > 0) {
-        if (_currentMsgId !== messageId || _audio.src !== url) {
+        if (_currentMsgId !== messageId) {
           _audio.src = url;
           _currentMsgId = messageId;
         }
         _audio.currentTime = frac * dur;
-        if (_audio.paused) _audio.play().catch(() => {});
-        sync();
+        if (_audio.paused) {
+          _audio.play().catch(() => {});
+        }
+        _notifyAll();
       }
     });
 
