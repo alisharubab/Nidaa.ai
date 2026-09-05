@@ -204,7 +204,21 @@ const VoicePlayer = (() => {
       sync();
     }
 
-    const api = { pause };
+    const api = {
+      pause,
+      messageId,
+      isPlaying: () => playing,
+      getTime: () => audio.currentTime,
+    };
+
+    // If this exact message was already playing in another instance (e.g. card in feed),
+    // seamlessly transfer playback and time position into this drawer player
+    if (_active && _active.messageId === messageId && _active.isPlaying()) {
+      const prevTime = _active.getTime();
+      _active.pause();
+      audio.currentTime = prevTime;
+      play();
+    }
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -245,5 +259,12 @@ const VoicePlayer = (() => {
     return root;
   }
 
-  return { create, audioUrl };
+  function stopAll() {
+    if (_active) {
+      _active.pause();
+      _active = null;
+    }
+  }
+
+  return { create, audioUrl, stopAll };
 })();
