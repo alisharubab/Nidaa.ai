@@ -2,112 +2,188 @@
 # Supports both:
 #  1. Default (Admin-2 District Centroid Target) - safe for baseline core geocoding
 #  2. --tehsil-targets (Admin-3 Sub-district Precision) - for pinpoint town accuracy
+
 import argparse
 import csv
 import json
-from pathlib import Path
 import re
 import sys
 import unicodedata
+from pathlib import Path
 
-DATA_DIR = Path('data')
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 def _normalize(s):
-    if not s: return ''
-    s = unicodedata.normalize('NFKD', s)
-    s = ''.join(c for c in s if not unicodedata.combining(c))
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
     s = s.lower().strip()
-    return re.sub(r'\s+', ' ', s)
+    return re.sub(r"\s+", " ", s)
+
+def generate_phonetic_variants(name):
+    """Generates phonetic, spacing, and orthographic variations for a Roman Urdu place name."""
+    norm = _normalize(name)
+    if not norm or len(norm) < 3:
+        return set()
+
+    variants = set([norm])
+
+    # 1. Spacing permutations
+    if " " in norm:
+        variants.add(norm.replace(" ", ""))
+        variants.add(norm.replace(" ", "-"))
+    if "-" in norm:
+        variants.add(norm.replace("-", " "))
+        variants.add(norm.replace("-", ""))
+
+    # 2. Compound suffix splits (e.g. muzaffargarh -> muzaffar garh / muzafar ghar)
+    suffixes = [
+        ("garh", [" garh", " ghar", " gar", " gadh"]),
+        ("ghar", [" ghar", " garh", " gar"]),
+        ("pur", [" pur", " poor", " pore"]),
+        ("abad", [" abad", " aabad"]),
+        ("khel", [" khel", " xel"]),
+        ("kot", [" kot", " kote"]),
+        ("wala", [" wala"]),
+        ("wali", [" wali"]),
+        ("nagar", [" nagar"]),
+        ("khas", [" khas"]),
+        ("shah", [" shah"]),
+        ("pattan", [" pattan", " patan"]),
+        ("channu", [" channu", " chanu"]),
+    ]
+
+    for v in list(variants):
+        for suf, replacements in suffixes:
+            if v.endswith(suf) and not v.endswith(" " + suf):
+                base = v[:-len(suf)].strip()
+                if len(base) >= 3:
+                    for rep in replacements:
+                        variants.add(base + rep)
+                        variants.add((base + rep).replace(" ", ""))
+
+    # 3. Double consonant reductions and expansions
+    double_consonants = ["ff", "tt", "kk", "dd", "ll", "mm", "nn", "ss", "pp", "bb", "rr"]
+    for v in list(variants):
+        for dc in double_consonants:
+            if dc in v:
+                variants.add(v.replace(dc, dc[0]))
+            single = dc[0]
+            if single in v and dc not in v and len(v) < 18:
+                if single in ["f", "t", "k", "d", "n", "m", "s", "l"]:
+                    variants.add(v.replace(single, dc, 1))
+
+    # 4. Common vowel swaps and phonetic shifts
+    for v in list(variants):
+        if "e" in v:
+            variants.add(v.replace("e", "i"))
+            variants.add(v.replace("e", "a"))
+        if "i" in v:
+            variants.add(v.replace("i", "e"))
+        if "u" in v:
+            variants.add(v.replace("u", "o"))
+            variants.add(v.replace("u", "oo"))
+        if "oo" in v:
+            variants.add(v.replace("oo", "u"))
+        if "q" in v:
+            variants.add(v.replace("q", "k"))
+        if "k" in v and "q" not in v:
+            variants.add(v.replace("k", "q", 1))
+        if "kh" in v:
+            variants.add(v.replace("kh", "x"))
+
+    # 5. Prefixes (zila, district, tehsil)
+    prefixed = set()
+    for v in variants:
+        prefixed.add(f"zila {v}")
+        prefixed.add(f"district {v}")
+        prefixed.add(f"tehsil {v}")
+
+    all_variants = variants | prefixed
+    return {_normalize(v) for v in all_variants if len(v) >= 3}
+
 
 def build_aliases(tehsil_precision=False):
-    with open(DATA_DIR / 'pak_gazetteer.csv', encoding='utf-8') as f:
+    with open(DATA_DIR / "pak_gazetteer.csv", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
-    valid_districts = set(r['adm2_name'].strip() for r in rows)
-    valid_tehsils = set(r['adm3_name'].strip() for r in rows)
+    valid_districts = set(r["adm2_name"].strip() for r in rows)
+    district_normalized_map = {_normalize(d): d for d in valid_districts}
 
-    # Base dictionary
-    aliases = {}
+    # High-priority base dictionary (never overwritten by heuristics)
+    base_aliases = {}
 
-    # 1. Add all tehsils from gazetteer
-    for r in rows:
-        tehsil = r['adm3_name'].strip()
-        district = r['adm2_name'].strip()
-        k = tehsil.lower()
-        target = tehsil if tehsil_precision else district
-        if k != target.lower():
-            aliases[k] = target
-
-    # 2. Comprehensive Urdu and Roman variants for all 160 districts
+    # 1. Comprehensive Urdu and Roman variants for all 160 districts
     URDU_MAP = {
         # Punjab
-        'Attock': ['اٹک', 'ضلع اٹک', 'attak'],
-        'Bahawalnagar': ['بہاولنگر', 'بہاول نگر', 'bahawal nagar'],
-        'Bahawalpur': ['بہاولپور', 'بہاول پور', 'bahawal pur'],
-        'Bhakkar': ['بھکر', 'ضلع بھکر'],
-        'Chakwal': ['چکوال', 'ضلع چکوال'],
-        'Chiniot': ['چنیوٹ', 'ضلع چنیوٹ'],
-        'Dera Ghazi Khan': ['ڈیرہ غازی خان', 'ڈی جی خان', 'dera ghazi khan', 'dg khan', 'd.g khan', 'd.g. khan', 'deraghazikhan'],
-        'Faisalabad': ['فیصل آباد', 'فیصل اباد', 'لائلپور', 'faisal abad', 'lyallpur'],
-        'Gujranwala': ['گوجرانوالہ', 'گوجرانوالا', 'gujran wala'],
-        'Gujrat': ['گجرات', 'ضلع گجرات'],
-        'Hafizabad': ['حافظ آباد', 'حافظ اباد', 'hafiz abad'],
-        'Jhang': ['جھنگ', 'ضلع جھنگ'],
+        'Attock': ['اٹک', 'ضلع اٹک', 'attak', 'atock'],
+        'Bahawalnagar': ['بہاولنگر', 'بہاول نگر', 'bahawal nagar', 'bahawalnagar'],
+        'Bahawalpur': ['بہاولپور', 'بہاول پور', 'bahawal pur', 'bahawalpur'],
+        'Bhakkar': ['بھکر', 'ضلع بھکر', 'bhakar'],
+        'Chakwal': ['چکوال', 'ضلع چکوال', 'chakkwal'],
+        'Chiniot': ['چنیوٹ', 'ضلع چنیوٹ', 'chiniote'],
+        'Dera Ghazi Khan': ['ڈیرہ غازی خان', 'ڈی جی خان', 'dera ghazi khan', 'dg khan', 'd.g khan', 'd.g. khan', 'dgk', 'deraghazikhan', 'd g khan'],
+        'Faisalabad': ['فیصل آباد', 'فیصل اباد', 'لائلپور', 'faisal abad', 'lyallpur', 'faisalabad'],
+        'Gujranwala': ['گوجرانوالہ', 'گوجرانوالا', 'gujran wala', 'gujranwala'],
+        'Gujrat': ['گجرات', 'ضلع گجرات', 'gujraat'],
+        'Hafizabad': ['حافظ آباد', 'حافظ اباد', 'hafiz abad', 'hafizabad'],
+        'Jhang': ['جھنگ', 'ضلع جھنگ', 'jhang'],
         'Jhelum': ['جہلم', 'ضلع جہلم', 'jehlum'],
-        'Kasur': ['قصور', 'ضلع قصور', 'qasoor', 'qasur'],
-        'Khanewal': ['خانیوال', 'ضلع خانیوال', 'khane wal'],
-        'Khushab': ['خوشاب', 'ضلع خوشاب'],
-        'Lahore': ['لاہور', 'ضلع لاہور', 'lhr'],
+        'Kasur': ['قصور', 'ضلع قصور', 'qasoor', 'qasur', 'kasoor'],
+        'Khanewal': ['خانیوال', 'ضلع خانیوال', 'khane wal', 'khanaywal'],
+        'Khushab': ['خوشاب', 'ضلع خوشاب', 'khushaab'],
+        'Lahore': ['لاہور', 'ضلع لاہور', 'lhr', 'lahor'],
         'Leiah': ['لیہ', 'لیا', 'لہیہ', 'ضلع لیہ', 'layyah', 'layya', 'leiah', 'liah', 'lia'],
-        'Lodhran': ['لودھراں', 'ضلع لودھراں'],
-        'Mandi Bahauddin': ['منڈی بہاؤالدین', 'منڈی بہاؤ الدین', 'mandi bahauddin', 'mandi baha ud din', 'mb din'],
-        'Mianwali': ['میانوالی', 'ضلع میانوالی'],
-        'Multan': ['ملتان', 'ضلع ملتان'],
-        'Muzaffargarh': ['مظفر گڑھ', 'مظفرگڑھ', 'ضلع مظفر گڑھ', 'muzaffar garh', 'muzaffargarh', 'muzafargarh'],
+        'Lodhran': ['لودھراں', 'ضلع لودھراں', 'lodhran'],
+        'Mandi Bahauddin': ['منڈی بہاؤالدین', 'منڈی بہاؤ الدین', 'mandi bahauddin', 'mandi baha ud din', 'mb din', 'mbdin'],
+        'Mianwali': ['میانوالی', 'ضلع میانوالی', 'mian wali'],
+        'Multan': ['ملتان', 'ضلع ملتان', 'multaan'],
+        'Muzaffargarh': ['مظفر گڑھ', 'مظفرگڑھ', 'ضلع مظفر گڑھ', 'muzaffar garh', 'muzaffargarh', 'muzafargarh', 'muzafar ghar', 'muzaffar ghar', 'muzafer ghar', 'muzaffer garh', 'muzaffar gadh', 'muzafar gadh'],
         'Nankana Sahib': ['ننکانہ صاحب', 'ننکانہ', 'nankana sahib', 'nankana'],
-        'Narowal': ['نارووال', 'ضلع نارووال', 'naro wal'],
-        'Okara': ['اوکاڑہ', 'اوکاڑا', 'ضلع اوکاڑہ'],
-        'Pakpattan': ['پاکپتن', 'پاک پتن', 'pak pattan', 'pakpattan'],
-        'Rahim Yar Khan': ['رحیم یار خان', 'آر وائی خان', 'rahim yar khan', 'rahimyarkhan', 'ry khan', 'r.y. khan', 'rykhan'],
-        'Rajanpur': ['راجن پور', 'راجنپور', 'rajan pur', 'rajanpur'],
-        'Rawalpindi': ['راولپنڈی', 'راول پنڈی', 'پنڈی', 'rawalpindi', 'rawal pindi', 'pindi'],
-        'Sahiwal': ['ساہیوال', 'ضلع ساہیوال', 'منٹگمری'],
-        'Sargodha': ['سرگودھا', 'ضلع سرگودھا'],
-        'Sheikhupura': ['شیخوپورہ', 'شیخوپورا', 'ضلع شیخوپورہ', 'sheikhupura', 'sheikhoopura'],
-        'Sialkot': ['سیالکوٹ', 'ضلع سیالکوٹ'],
-        'Toba Tek Singh': ['ٹوبہ ٹیک سنگھ', 'ٹوبہ', 'toba tek singh', 'toba', 'tts'],
-        'Vehari': ['وہاڑی', 'ضلع وہاڑی', 'vihari'],
+        'Narowal': ['نارووال', 'ضلع نارووال', 'naro wal', 'narowaal'],
+        'Okara': ['اوکاڑہ', 'اوکاڑا', 'ضلع اوکاڑہ', 'okaara'],
+        'Pakpattan': ['پاکپتن', 'پاک پتن', 'pak pattan', 'pakpattan', 'pakpatan'],
+        'Rahim Yar Khan': ['رحیم یار خان', 'آر وائی خان', 'rahim yar khan', 'rahimyarkhan', 'ry khan', 'r.y. khan', 'rykhan', 'ryk'],
+        'Rajanpur': ['راجن پور', 'راجنپور', 'rajan pur', 'rajanpur', 'rajanpoor', 'rajan poor'],
+        'Rawalpindi': ['راولپنڈی', 'راول پنڈی', 'پنڈی', 'rawalpindi', 'rawal pindi', 'pindi', 'rwp'],
+        'Sahiwal': ['ساہیوال', 'ضلع ساہیوال', 'منٹگمری', 'sahiwal', 'montgomery'],
+        'Sargodha': ['سرگودھا', 'ضلع سرگودھا', 'sargodha'],
+        'Sheikhupura': ['شیخوپورہ', 'شیخوپورا', 'ضلع شیخوپورہ', 'sheikhupura', 'sheikhoopura', 'sheikhupura'],
+        'Sialkot': ['سیالکوٹ', 'ضلع سیالکوٹ', 'sial kot', 'sealkot'],
+        'Toba Tek Singh': ['ٹوبہ ٹیک سنگھ', 'ٹوبہ', 'toba tek singh', 'toba', 'tts', 'toba teksingh'],
+        'Vehari': ['وہاڑی', 'ضلع وہاڑی', 'vihari', 'vehaari'],
 
         # Sindh
         'Badin': ['بدین', 'ضلع بدین', 'baadin', 'badin'],
-        'Central Karachi': ['کراچی وسطی', 'وسطی کراچی', 'کراچی سنٹرل'],
+        'Central Karachi': ['کراچی وسطی', 'وسطی کراچی', 'کراچی سنٹرل', 'central karachi'],
         'Dadu': ['دادو', 'ڈاڈو', 'daadu', 'dadoo', 'dadu'],
-        'East Karachi': ['کراچی شرقی', 'شرقی کراچی', 'کراچی ایسٹ'],
+        'East Karachi': ['کراچی شرقی', 'شرقی کراچی', 'کراچی ایسٹ', 'east karachi'],
         'Ghotki': ['گھوٹکی', 'ضلع گھوٹکی', 'ghotki', 'ghoki'],
-        'Hyderabad': ['حیدرآباد', 'حیدر اباد', 'hyderabad', 'hyder abad'],
+        'Hyderabad': ['حیدرآباد', 'حیدر اباد', 'hyderabad', 'hyder abad', 'hyd'],
         'Jacobabad': ['جیکب آباد', 'جیکب اباد', 'جیکبہ', 'جیکبہ بابات', 'jacobabad', 'jakobabad', 'jacob abad', 'jikba', 'jikba babat'],
         'Jamshoro': ['جامشورو', 'جام شورو', 'jamshuro', 'jam shoro', 'jamshoro'],
-        'Kambar Shahdad Kot': ['قمبر شہداد کوٹ', 'قمبر', 'شہداد کوٹ', 'قمبر شہدادکوٹ', 'qambar shahdadkot', 'kamber shahdadkot', 'shahdadkot', 'qambar', 'kambar'],
-        'Kashmore': ['کشمور', 'قشمور', 'kashmore', 'kashmor', 'qashmore'],
-        'Khairpur': ['خیرپور', 'خیر پور', 'khairpur', 'khairpoor', 'khairpur mirs'],
+        'Kambar Shahdad Kot': ['قمبر شہداد کوٹ', 'قمبر', 'شہداد کوٹ', 'قمبر شہدادکوٹ', 'qambar shahdadkot', 'kamber shahdadkot', 'shahdadkot', 'qambar', 'kambar', 'qambar shahdad kot'],
+        'Kashmore': ['کشمور', 'قشمور', 'kashmore', 'kashmor', 'qashmore', 'kandhkot'],
+        'Khairpur': ['خیرپور', 'خیر پور', 'khairpur', 'khairpoor', 'khairpur mirs', 'xairpur'],
         'Korangi Karachi': ['کورنگی', 'کراچی کورنگی', 'korangi'],
         'Larkana': ['لاڑکانہ', 'لاڑکانو', 'ضلع لاڑکانہ', 'larkana', 'larkano'],
         'Malir Karachi': ['ملیر', 'کراچی ملیر', 'malir'],
         'Matiari': ['مٹیاری', 'ضلع مٹیاری', 'matiari', 'matiyari'],
-        'Mirpur Khas': ['میرپور خاص', 'میر پور خاص', 'میرپورخاص', 'mirpur khas', 'mirpurkhas', 'mir pur khas'],
-        'Naushahro Feroze': ['نوشہرو فیروز', 'نوشہروفیروز', 'naushahro feroze', 'naushahroferoze', 'naushero feroze', 'nawabshah feroze'],
+        'Mirpur Khas': ['میرپور خاص', 'میر پور خاص', 'میرپورخاص', 'mirpur khas', 'mirpurkhas', 'mir pur khas', 'meerpur khas'],
+        'Naushahro Feroze': ['نوشہرو فیروز', 'نوشہروفیروز', 'naushahro feroze', 'naushahroferoze', 'naushero feroze', 'nawabshah feroze', 'noshero feroz'],
         'Sanghar': ['سانگھڑ', 'ضلع سانگھڑ', 'sanghar', 'sangher'],
-        'Shaheed Benazir Abad': ['شہید بینظیر آباد', 'شہید بے نظیر آباد', 'نواب شاہ', 'نوابشاہ', 'بینظیر آباد', 'shaheed benazir abad', 'shaheed benazirabad', 'benazirabad', 'nawabshah', 'nawab shah'],
-        'Shikarpur': ['شکارپور', 'ضلع شکارپور', 'shikarpur', 'shikaarpur'],
+        'Shaheed Benazir Abad': ['شہید بینظیر آباد', 'شہید بے نظیر آباد', 'نواب شاہ', 'نوابشاہ', 'بینظیر آباد', 'shaheed benazir abad', 'shaheed benazirabad', 'benazirabad', 'nawabshah', 'nawab shah', 'sba'],
+        'Shikarpur': ['شکارپور', 'ضلع شکارپور', 'shikarpur', 'shikaarpur', 'shikar pur', 'shikarpoor'],
         'South Karachi': ['کراچی جنوبی', 'جنوبی کراچی', 'کراچی ساؤتھ', 'کراچی', 'karachi', 'khi'],
         'Sujawal': ['سجاول', 'ضلع سجاول', 'sujawal', 'sujaawal'],
-        'Sukkur': ['سکھر', 'سخر', 'سکر', 'سکھر بیراج', 'sukkur', 'sakkhar', 'sukker', 'sukhar', 'sukhur'],
+        'Sukkur': ['سکھر', 'سخر', 'سکر', 'سکھر بیراج', 'sukkur', 'sakkhar', 'sukker', 'sukhar', 'sukhur', 'sakkar'],
         'Tando Allahyar': ['ٹنڈو الہ یار', 'ٹنڈو اللہ یار', 'ٹنڈوالہ یار', 'tando allahyar', 'tando allah yaar'],
-        'Tando Muhammad Khan': ['ٹنڈو محمد خان', 'ٹنڈو محمدخان', 'tando muhammad khan', 'tmkhan'],
+        'Tando Muhammad Khan': ['ٹنڈو محمد خان', 'ٹنڈو محمدخان', 'tando muhammad khan', 'tmkhan', 'tm khan'],
         'Tharparkar': ['تھرپارکر', 'تھر پارکر', 'تھر', 'tharparkar', 'tharparker', 'thar parkar', 'thar'],
         'Thatta': ['ٹھٹھہ', 'ٹھٹہ', 'thatta', 'thata'],
-        'Umer Kot': ['عمرکوٹ', 'عمر کوٹ', 'umer kot', 'umarkot', 'umerkot'],
-        'West Karachi': ['کراچی غربی', 'غربی کراچی', 'کراچی ویسٹ'],
+        'Umer Kot': ['عمرکوٹ', 'عمر کوٹ', 'umer kot', 'umarkot', 'umerkot', 'amarkot'],
+        'West Karachi': ['کراچی غربی', 'غربی کراچی', 'کراچی ویسٹ', 'west karachi'],
 
         # Balochistan
         'Awaran': ['آواران', 'اواران', 'ضلع آواران', 'awaran'],
@@ -124,7 +200,7 @@ def build_aliases(tehsil_precision=False):
         'Kalat': ['قلات', 'ضلع قلات', 'kalat', 'kalaat', 'qalat'],
         'Kech': ['کیچ', 'تربت', 'kech', 'turbat'],
         'Kharan': ['خاران', 'ضلع خاران', 'kharan'],
-        'Khuzdar': ['خضدار', 'ضلع خضدار', 'khuzdar', 'khozdaar'],
+        'Khuzdar': ['خضدار', 'ضلع خضدار', 'khuzdar', 'khozdaar', 'khozdar'],
         'Killa Abdullah': ['قلعہ عبداللہ', 'قلعہ عبد اللہ', 'killa abdullah', 'qila abdullah'],
         'Killa Saifullah': ['قلعہ سیف اللہ', 'قلعہ سیفاللہ', 'killa saifullah', 'qila saifullah', 'kila saifullah'],
         'Kohlu': ['کوہلو', 'ضلع کوہلو', 'kohlu'],
@@ -137,7 +213,7 @@ def build_aliases(tehsil_precision=False):
         'Nushki': ['نوشکی', 'ضلع نوشکی', 'nushki'],
         'Panjgur': ['پنجگور', 'ضلع پنجگور', 'panjgur'],
         'Pishin': ['پشین', 'ضلع پشین', 'pishin'],
-        'Quetta': ['کوئٹہ', 'ضلع کوئٹہ', 'quetta'],
+        'Quetta': ['کوئٹہ', 'ضلع کوئٹہ', 'quetta', 'qta', 'kwetta'],
         'Shaheed Sikandarabad': ['شہید سکندر آباد', 'سوراب', 'surab', 'shaheed sikandarabad'],
         'Sherani': ['شیرانی', 'ضلع شیرانی', 'sherani'],
         'Sibi': ['سبی', 'ضلع سبی', 'sibi', 'sibbi'],
@@ -147,15 +223,15 @@ def build_aliases(tehsil_precision=False):
         'Ziarat': ['زیارت', 'ضلع زیارت', 'ziarat'],
 
         # Khyber Pakhtunkhwa
-        'Abbottabad': ['ایبٹ آباد', 'ایبٹ اباد', 'ضلع ایبٹ آباد', 'abbottabad'],
+        'Abbottabad': ['ایبٹ آباد', 'ایبٹ اباد', 'ضلع ایبٹ آباد', 'abbottabad', 'abbotabad', 'abbott abad'],
         'Bajaur': ['باجوڑ', 'ضلع باجوڑ', 'bajaur'],
-        'Bannu': ['بنوں', 'ضلع بنوں', 'bannu'],
+        'Bannu': ['بنوں', 'ضلع بنوں', 'bannu', 'banu'],
         'Batagram': ['بٹگرام', 'ضلع بٹگرام', 'batagram', 'battagram'],
         'Buner': ['بونیر', 'ضلع بونیر', 'buner'],
         'Charsadda': ['چارسدہ', 'ضلع چارسدہ', 'charsadda', 'charsada'],
         'Chitral Lower': ['چترال', 'لوئر چترال', 'چترال زیریں', 'ضلع چترال', 'lower chitral', 'chitral'],
         'Chitral Upper': ['اپر چترال', 'چترال بالا', 'upper chitral'],
-        'D. I. Khan': ['ڈی آئی خان', 'ڈیرہ اسماعیل خان', 'd. i. khan', 'd.i khan', 'dikhan', 'd i khan', 'dera ismail khan'],
+        'D. I. Khan': ['ڈی آئی خان', 'ڈیرہ اسماعیل خان', 'di khan', 'd.i.khan', 'd. i. khan', 'd.i khan', 'dikhan', 'd i khan', 'dera ismail khan', 'dik', 'dera ismael khan'],
         'Hangu': ['ہنگو', 'ضلع ہنگو', 'hangu'],
         'Haripur': ['ہری پور', 'ہریپور', 'ضلع ہری پور', 'haripur', 'hari pur'],
         'Karak': ['کرک', 'ضلع کرک', 'karak'],
@@ -172,9 +248,9 @@ def build_aliases(tehsil_precision=False):
         'Mardan': ['مردان', 'ضلع مردان', 'mardan'],
         'Mohmand': ['مہمند', 'ضلع مہمند', 'mohmand'],
         'North Waziristan': ['شمالی وزیرستان', 'north waziristan'],
-        'Nowshera': ['نوشہرہ', 'ضلع نوشہرہ', 'nowshera', 'nowshehra'],
+        'Nowshera': ['نوشہرہ', 'ضلع نوشہرہ', 'nowshera', 'nowshehra', 'naushera'],
         'Orakzai': ['اورکزئی', 'ضلع اورکزئی', 'orakzai'],
-        'Peshawar': ['پشاور', 'ضلع پشاور', 'peshawar', 'pesh'],
+        'Peshawar': ['پشاور', 'ضلع پشاور', 'peshawar', 'pesh', 'psh'],
         'Shangla': ['شانگلہ', 'ضلع شانگلہ', 'shangla'],
         'South Waziristan': ['جنوبی وزیرستان', 'south waziristan', 'waziristan'],
         'Swabi': ['صوابی', 'ضلع صوابی', 'swabi'],
@@ -190,7 +266,7 @@ def build_aliases(tehsil_precision=False):
         'Jhelum Valley': ['جہلم ویلی', 'jhelum valley'],
         'Kotli': ['کوٹلی', 'ضلع کوٹلی', 'kotli'],
         'Mirpur': ['میرپور', 'ضلع میرپور', 'mirpur'],
-        'Muzaffarabad': ['مظفر آباد', 'مظفرآباد', 'ضلع مظفر آباد', 'muzaffarabad', 'muzaffar abad'],
+        'Muzaffarabad': ['مظفر آباد', 'مظفرآباد', 'ضلع مظفر آباد', 'muzaffarabad', 'muzaffar abad', 'muzafarabad'],
         'Neelum': ['نیلم', 'وادی نیلم', 'neelum', 'neelum valley'],
         'Poonch': ['پونچھ', 'راولاکوٹ', 'راولا کوٹ', 'poonch', 'rawalakot'],
         'Sudhnoti': ['سدھنوتی', 'پلندری', 'sudhnoti', 'pallandri'],
@@ -215,43 +291,50 @@ def build_aliases(tehsil_precision=False):
         'Islamabad': ['اسلام آباد', 'اسلام اباد', 'اسلاماباد', 'islamabad', 'isloo', 'isb']
     }
 
-    # 3. Tehsils / Sub-districts explicit mapping
+    # Populate explicit district aliases
+    for dist, var_list in URDU_MAP.items():
+        if dist not in valid_districts:
+            continue
+        for var in var_list:
+            base_aliases[_normalize(var)] = dist
+
+    # 2. Tehsils explicit mapping (Curated Urdu + transliterations)
     TEHSIL_MAP = {
-        'Mian Channu': ['میاں چنوں', 'میاں چنو', 'mian channu', 'mianchannu'],
-        'Kabirwala': ['کبیروالا', 'کبیر والا', 'kabirwala'],
+        'Mian Channu': ['میاں چنوں', 'میاں چنو', 'mian channu', 'mianchannu', 'mian chanu'],
+        'Kabirwala': ['کبیروالا', 'کبیر والا', 'kabirwala', 'kabir wala'],
         'Jahanian': ['جہانیاں', 'jahanian'],
         'Johi': ['جوہی', 'johi'],
         'Mehar': ['میہڑ', 'mehar'],
-        'Khairpur Nathan Shah': ['خیرپور ناتھن شاہ', 'kn shah'],
+        'Khairpur Nathan Shah': ['خیرپور ناتھن شاہ', 'kn shah', 'k n shah', 'k.n. shah'],
         'Rohri': ['روہڑی', 'rohri'],
-        'Pano Aqil': ['پنو عاقل', 'pano aqil'],
+        'Pano Aqil': ['پنو عاقل', 'pano aqil', 'panoaqil'],
         'Kotri': ['کوٹری', 'کوٹری بیراج', 'kotri'],
-        'Sehwan': ['سیہون', 'sehwan'],
+        'Sehwan': ['سیہون', 'sehwan', 'sehwan sharif'],
         'Hub': ['حب', 'hub'],
         'Bela': ['بیلہ', 'bela'],
         'Uthal': ['اوٹھل', 'uthal'],
         'Winder': ['وندر', 'winder'],
         'Sui': ['سوئی', 'sui'],
-        'Taunsa': ['تونسہ', 'taunsa'],
-        'Fazilpur': ['فاضل پور', 'fazilpur'],
-        'Rojhan': ['روجھان', 'rojhan'],
-        'Jampur': ['جام پور', 'jampur'],
+        'Taunsa': ['تونسہ', 'taunsa', 'taunsa sharif'],
+        'Fazilpur': ['فاضل پور', 'fazilpur', 'fazil pur'],
+        'Rojhan': ['روجھان', 'rojhan', 'rojhaan'],
+        'Jampur': ['جام پور', 'jampur', 'jam pur'],
         'Mithi': ['مٹھی', 'mithi'],
-        'Islamkot': ['اسلام کوٹ', 'islamkot'],
-        'Nagarparkar': ['نگر پارکر', 'nagarparkar'],
+        'Islamkot': ['اسلام کوٹ', 'islamkot', 'islam kot'],
+        'Nagarparkar': ['نگر پارکر', 'nagarparkar', 'nagar parkar'],
         'Diplo': ['ڈپلو', 'diplo'],
         'Thul': ['ٹھل', 'thul'],
         'Garhi Khairo': ['گڑھی خیرو', 'garhi khairo'],
-        'Kandhkot': ['کندھ کوٹ', 'kandhkot'],
-        'Kot Addu': ['کوٹ ادو', 'kot addu'],
-        'Alipur': ['علی پور', 'alipur'],
+        'Kandhkot': ['کندھ کوٹ', 'kandhkot', 'kandh kot'],
+        'Kot Addu': ['کوٹ ادو', 'کوٹ ادّو', 'kot addu', 'kotaddu', 'kot adu'],
+        'Alipur': ['علی پور', 'alipur', 'ali pur', 'alipoor'],
         'Jatoi': ['جتوئی', 'jatoi'],
         'Daharki': ['ڈہرکی', 'daharki'],
         'Mirpur Mathelo': ['میرپور ماتھیلو', 'mirpur mathelo'],
         'Ubauro': ['اوباڑو', 'ubauro'],
         'Moro': ['مورو', 'moro'],
         'Kandiaro': ['کنڈیارو', 'kandiaro'],
-        'Shahdadpur': ['شہدادپور', 'shahdadpur'],
+        'Shahdadpur': ['شہدادپور', 'shahdadpur', 'shahdad pur'],
         'Tando Adam': ['ٹنڈو آدم', 'tando adam'],
         'Khipro': ['کھپرو', 'khipro'],
         'Matli': ['ماتلی', 'matli'],
@@ -265,44 +348,97 @@ def build_aliases(tehsil_precision=False):
         'Ormara': ['اورماڑہ', 'ormara'],
         'Chilas': ['چلاس', 'chilas'],
         'Parachinar': ['پاراچنار', 'parachinar'],
-        'Balakot': ['بالاکوٹ', 'balakot'],
+        'Balakot': ['بالاکوٹ', 'balakot', 'bala kot'],
         'Timergara': ['تیمرگرہ', 'timergara'],
         'Mingora': ['مینگورہ', 'mingora'],
     }
 
-    # Map districts
-    for dist, var_list in URDU_MAP.items():
-        if dist not in valid_districts: continue
-        for var in var_list:
-            aliases[var.strip().lower()] = dist
+    tehsil_to_district = {r["adm3_name"].strip(): r["adm2_name"].strip() for r in rows}
 
-    # Map tehsils: if tehsil_precision is True, map to Tehsil; else map to parent District
-    tehsil_to_district = {r['adm3_name'].strip(): r['adm2_name'].strip() for r in rows}
+    # Explicit tehsil mappings
     for teh, var_list in TEHSIL_MAP.items():
         target = teh if tehsil_precision else tehsil_to_district.get(teh, teh)
         for var in var_list:
-            aliases[var.strip().lower()] = target
+            base_aliases[_normalize(var)] = target
 
-    # Add normalized keys so NFKD Unicode decomposition never misses
+    # 3. Build Algorithmic Variations for ALL 160 Districts
+    generated_district_aliases = {}
+    for dist in valid_districts:
+        variants = generate_phonetic_variants(dist)
+        for explicit_var in URDU_MAP.get(dist, []):
+            variants.update(generate_phonetic_variants(explicit_var))
+        for v in variants:
+            generated_district_aliases[v] = dist
+
+    # 4. Build Algorithmic Variations for ALL 573 Tehsils
+    generated_tehsil_aliases = {}
+    tehsil_counts = {}
+    for r in rows:
+        t = r["adm3_name"].strip()
+        tehsil_counts[t] = tehsil_counts.get(t, 0) + 1
+
+    for r in rows:
+        tehsil = r["adm3_name"].strip()
+        district = r["adm2_name"].strip()
+        target = tehsil if tehsil_precision else district
+
+        # If tehsil name is ambiguous across multiple districts (e.g. Khanpur), skip heuristic expansion
+        if tehsil_counts[tehsil] > 1:
+            continue
+
+        variants = generate_phonetic_variants(tehsil)
+        for explicit_var in TEHSIL_MAP.get(tehsil, []):
+            variants.update(generate_phonetic_variants(explicit_var))
+
+        for v in variants:
+            generated_tehsil_aliases[v] = target
+
+    # 5. Assembly with Strict Collision Guards
     final_aliases = {}
-    for k, v in aliases.items():
-        final_aliases[k] = v
-        nk = _normalize(k)
-        if nk:
-            final_aliases[nk] = v
 
-    return final_aliases
+    # Layer 4: Generated Tehsil Aliases
+    for k, v in generated_tehsil_aliases.items():
+        if k not in district_normalized_map:
+            final_aliases[k] = v
 
-if __name__ == '__main__':
+    # Layer 3: Generated District Aliases (overwrites tehsil heuristics if collision)
+    for k, v in generated_district_aliases.items():
+        if k not in district_normalized_map:
+            final_aliases[k] = v
+
+    # Layer 2: Curated Base Aliases (always wins over heuristics)
+    for k, v in base_aliases.items():
+        if k not in district_normalized_map:
+            final_aliases[k] = v
+
+    # Layer 1: Real District names (self-identity guard, remove self-alias)
+    for norm_d, real_d in district_normalized_map.items():
+        if norm_d in final_aliases:
+            del final_aliases[norm_d]
+
+    # Clean up empty keys and self-mappings
+    cleaned = {}
+    for k, v in final_aliases.items():
+        if not k or len(k) < 3:
+            continue
+        if k == _normalize(v):
+            continue
+        cleaned[k] = v
+
+    return cleaned
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--tehsils', action='store_true', help='Set alias targets to specific tehsils (requires updated geocode.py)')
+    parser.add_argument("--tehsils", action="store_true", help="Set alias targets to specific tehsils (requires updated geocode.py)")
     args = parser.parse_args()
 
-    mode_name = 'Tehsil Sub-district Precision' if args.tehsils else 'District Centroid (Default)'
-    print(f'Building aliases in mode: {mode_name}')
+    mode_name = "Tehsil Sub-district Precision" if args.tehsils else "District Centroid (Default)"
+    print(f"Building aliases in mode: {mode_name}")
     data = build_aliases(tehsil_precision=args.tehsils)
 
-    with open(DATA_DIR / 'aliases.json', 'w', encoding='utf-8') as f:
+    output_path = DATA_DIR / "aliases.json"
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print(f'Successfully wrote {len(data)} aliases to data/aliases.json!')
+    print(f"Successfully wrote {len(data)} aliases to {output_path}!")

@@ -28,10 +28,11 @@ function readback({ adm2, province, items, urgency }) {
   );
 }
 
-function readbackAck({ confirmed }) {
+function readbackAck({ confirmed, adm2, items }) {
+  const context = adm2 ? `\n\n📍 *Record:* ${adm2}${items ? ` (${items})` : ""}` : "";
   return confirmed
-    ? "✅ *Shukriya!* Aap ki report confirm ho chuki hai aur rescue dashboard par darj kar di gayi hai.\n\n⚠️ *Emergency?* Rescue *1122* / *1129* par call bhi karein."
-    : "⚠️ *Noted!* Aap ki report review queue mein darj kar di gayi hai taake rescue dispatcher dobara check kare.\n\n⚠️ *Emergency?* Rescue *1122* / *1129* par call bhi karein.";
+    ? `✅ *Shukriya!* Aap ki report confirm ho chuki hai aur rescue dashboard par darj kar di gayi hai.${context}\n\n⚠️ *Emergency?* Rescue *1122* / *1129* par call bhi karein.`
+    : `⚠️ *Noted!* Aap ki report review queue mein darj kar di gayi hai taake rescue dispatcher dobara check kare.${context}\n\n⚠️ *Emergency?* Rescue *1122* / *1129* par call bhi karein.`;
 }
 
 function audioUnintelligible() {
