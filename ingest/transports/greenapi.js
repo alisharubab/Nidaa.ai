@@ -79,16 +79,28 @@ function parseNotification(notif) {
   const msgData    = body.messageData || {};
   const type       = msgData.typeMessage;
 
-  if (type === "textMessage") {
-    const text = msgData.textMessageData?.textMessage || null;
+  // Direct and forwarded text messages
+  if (type === "textMessage" || type === "extendedTextMessage") {
+    const text =
+      msgData.textMessageData?.textMessage ||
+      msgData.extendedTextMessageData?.text ||
+      null;
     if (!text) return null;
     return { endpointId, messageId, text, voice: null };
   }
 
-  // audioMessage = uploaded audio file; voiceMessage = PTT voice note.
-  // Both are handled identically — download the file and convert to WAV.
-  if (type === "audioMessage" || type === "voiceMessage") {
-    const url      = msgData.fileMessageData?.downloadUrl || null;
+  // audioMessage = uploaded audio file; voiceMessage = PTT voice note;
+  // documentMessage = forwarded audio file / audio attachment.
+  // Strictly filter for audio types only — ignore images, videos, stickers, PDFs, docs.
+  const isAudioType =
+    type === "audioMessage" ||
+    type === "voiceMessage" ||
+    (type === "documentMessage" &&
+      (msgData.fileMessageData?.mimeType?.startsWith("audio/") ||
+       /\.(opus|ogg|mp3|m4a|wav|aac|amr|flac)$/i.test(msgData.fileMessageData?.fileName || "")));
+
+  if (isAudioType) {
+    const url      = msgData.fileMessageData?.downloadUrl || msgData.downloadUrl || null;
     const mimeType = msgData.fileMessageData?.mimeType    || "audio/ogg";
     if (!url) return null;
     return {
@@ -99,7 +111,7 @@ function parseNotification(notif) {
     };
   }
 
-  // Other types (image, video, sticker, document, location...) — out of scope
+  // All other non-audio types (images, videos, stickers, non-audio documents, locations) — ignored
   return null;
 }
 
