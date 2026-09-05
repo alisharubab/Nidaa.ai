@@ -84,6 +84,7 @@ function applyFilters() {
     visible.forEach((t) => list.appendChild(renderTicketCard(t)));
   }
 
+  if (typeof VoicePlayer !== "undefined" && VoicePlayer.notifyAll) VoicePlayer.notifyAll();
   if (typeof refreshPins === "function") refreshPins(visible);
   if (typeof refreshStatusCards === "function") refreshStatusCards(activeQueue);
   updateChipCounts();

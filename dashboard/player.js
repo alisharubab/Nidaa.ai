@@ -32,6 +32,20 @@ const VoicePlayer = (() => {
     return `${window.CORE_URL}/audio/${encodeURIComponent(audioPath.split(/[\/\\]/).pop())}`;
   }
 
+  function _normalizeUrl(u) {
+    if (!u) return "";
+    try {
+      return new URL(u, window.location.href).href;
+    } catch {
+      return String(u);
+    }
+  }
+
+  function _isSameAudio(targetUrl) {
+    if (!_audio.src || !targetUrl) return false;
+    return _normalizeUrl(_audio.src) === _normalizeUrl(targetUrl);
+  }
+
   function _fallbackPeaks(messageId, n) {
     let seed = ((messageId || 1) * 2654435761) % 4294967296;
     const peaks = new Float32Array(n);
@@ -160,16 +174,16 @@ const VoicePlayer = (() => {
     const canvas = root.querySelector(".vp-wave");
     const timeEl = root.querySelector(".vp-time");
 
-    const isThisPlaying = () => _currentMsgId != null && String(_currentMsgId) === String(messageId) && !_audio.paused;
+    const isThisPlaying = () => !_audio.paused && !_audio.ended && _isSameAudio(url);
 
     const total = () => {
-      if (String(_currentMsgId) === String(messageId) && Number.isFinite(_audio.duration) && _audio.duration > 0) {
+      if (_isSameAudio(url) && Number.isFinite(_audio.duration) && _audio.duration > 0) {
         return _audio.duration;
       }
       return duration || 0;
     };
 
-    const elapsed = () => (String(_currentMsgId) === String(messageId) ? _audio.currentTime : 0);
+    const elapsed = () => (_isSameAudio(url) ? _audio.currentTime : 0);
 
     function draw() {
       const dpr = window.devicePixelRatio || 1;
@@ -211,11 +225,20 @@ const VoicePlayer = (() => {
         : (t > 0 ? _fmtTime(t) : "—:—");
     }
 
+    let _hasEverConnected = false;
+
     function sync() {
-      if (!root.isConnected) {
+      if (root.isConnected) {
+        _hasEverConnected = true;
+      } else if (_hasEverConnected) {
+        // Was connected before, but has been removed from DOM: unregister
         _listeners.delete(sync);
         return;
+      } else {
+        // Not yet mounted to document (during fragment construction) -- wait for mount
+        return;
       }
+
       const playing = isThisPlaying();
       root.classList.toggle("playing", playing);
       draw();
@@ -228,9 +251,8 @@ const VoicePlayer = (() => {
       if (isThisPlaying()) {
         _audio.pause();
       } else {
-        if (String(_currentMsgId) !== String(messageId) || _audio.src !== url) {
+        if (!_isSameAudio(url)) {
           _audio.src = url;
-          _currentMsgId = messageId;
           _audio.currentTime = 0;
         }
         try {
@@ -252,23 +274,22 @@ const VoicePlayer = (() => {
     canvas.addEventListener("click", (e) => {
       e.stopPropagation();
       const rect = canvas.getBoundingClientRect();
+      if (!rect.width) return;
       const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const dur = total();
       if (dur > 0) {
-        if (String(_currentMsgId) !== String(messageId) || _audio.src !== url) {
+        if (!_isSameAudio(url)) {
           _audio.src = url;
-          _currentMsgId = messageId;
         }
         _audio.currentTime = frac * dur;
         if (_audio.paused) {
-          _audio.play().catch(() => {});
-          _startLoop();
+          _audio.play().then(() => _startLoop()).catch(() => {});
         }
         _notifyAll();
       }
     });
 
-    // Initial paint and async peak decoding
+    // Initial paint attempt and async peak decoding
     sync();
     if (isThisPlaying()) _startLoop();
     _decodePeaks(messageId, url, 96).then(() => { if (root.isConnected) sync(); });
@@ -278,9 +299,8 @@ const VoicePlayer = (() => {
 
   function stopAll() {
     _audio.pause();
-    _currentMsgId = null;
     _notifyAll();
   }
 
-  return { create, audioUrl, stopAll };
+  return { create, audioUrl, stopAll, notifyAll: _notifyAll };
 })();
