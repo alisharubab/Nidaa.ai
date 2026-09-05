@@ -47,7 +47,23 @@ def build_district_index(gazetteer: list[dict]) -> dict:
     shapefile or, to stay dependency-light, from the gazetteer's own
     coordinate columns where present." Keyed by normalized adm2_name. Call
     once at startup, not per-request (rebuilding this per lookup would be
-    wasteful -- it's the same ~577 rows every time)."""
+    wasteful -- it's the same ~577 rows every time).
+
+    Also indexes individual tehsils (admin-3) by their own normalized name,
+    pointing at the tehsil's own coordinates while still tagging the parent
+    district's adm2_name/pcode -- so a message naming a specific town drops
+    a pin on that town rather than the district centroid, without changing
+    anything district-level (DDMA filters, WhatsApp readbacks, dedup) that
+    reads adm2_name/pcode. A tehsil name is skipped, not indexed, if it's
+    ambiguous: the real 577-row gazetteer has genuine collisions (Sahiwal is
+    both a district AND an unrelated tehsil of Sargodha; Khanpur names a
+    tehsil in three different districts across three provinces). Silently
+    letting one collide into another would resolve a real place name to the
+    WRONG district -- worse than the coarser-but-correct district centroid,
+    and the same class of confident-but-wrong geocode this project hit
+    before (the Muzaffargarh/Muzaffarabad case, docs/TRD.md 4.5). An
+    ambiguous tehsil name just falls back to its own district-level entry,
+    which is already correct and unambiguous."""
     groups: dict[str, list[dict]] = {}
     for row in gazetteer:
         key = _normalize(row["adm2_name"])
@@ -64,6 +80,30 @@ def build_district_index(gazetteer: list[dict]) -> dict:
             "latitude": sum(lats) / len(lats),
             "longitude": sum(lons) / len(lons),
         }
+
+    tehsil_districts: dict[str, set[str]] = {}
+    for row in gazetteer:
+        t_key = _normalize(row["adm3_name"])
+        if t_key:
+            tehsil_districts.setdefault(t_key, set()).add(row["adm2_name"])
+
+    for row in gazetteer:
+        t_key = _normalize(row["adm3_name"])
+        d_key = _normalize(row["adm2_name"])
+        if not t_key or t_key == d_key:
+            continue  # same name as its own district -- the district entry already covers it
+        if t_key in groups:
+            continue  # collides with a DIFFERENT district's own name (e.g. Sahiwal)
+        if len(tehsil_districts[t_key]) > 1:
+            continue  # ambiguous: this tehsil name exists in more than one district
+        index[t_key] = {
+            "adm2_name": row["adm2_name"],
+            "adm1_name": row["adm1_name"],
+            "pcode": row["adm2_pcode"],
+            "latitude": float(row["lat"]),
+            "longitude": float(row["lon"]),
+        }
+
     return index
 
 
@@ -76,25 +116,36 @@ def _no_match() -> dict:
 
 
 def _try_cascade(candidate: str | None, district_index: dict, aliases: dict) -> dict | None:
-    """One candidate string through alias -> exact -> fuzzy. Returns None
+    """One candidate string through exact -> alias -> fuzzy. Returns None
     (not _no_match()) on failure so the caller can try a second candidate
-    before giving up -- see geocode()."""
+    before giving up -- see geocode().
+
+    Exact match is tried BEFORE alias lookup (reordered from the original
+    alias-first cascade) because data/aliases.json has genuine name
+    collisions: e.g. "Sahiwal" is a real district AND, separately, an
+    unrelated tehsil of Sargodha that got aliased to "Sargodha" -- with
+    alias checked first, that entry silently hijacked every mention of the
+    real Sahiwal district before this fix. Aliases exist to catch spelling
+    variants of a name that ISN'T already a literal, valid district name;
+    when the candidate already exactly matches a real district, that's
+    strictly more certain than a heuristic alias-table guess and should
+    always win."""
     normalized = _normalize(candidate) if candidate else ""
     if not normalized:
         return None
 
-    # 1. Alias lookup (hand-curated Roman Urdu / Urdu-script spelling
+    # 1. Exact normalised match against a real district name.
+    entry = district_index.get(normalized)
+    if entry is not None:
+        return {**entry, "geocode_method": "exact", "geocode_score": 1.0}
+
+    # 2. Alias lookup (hand-curated Roman Urdu / Urdu-script spelling
     # variants -> canonical district name, data/aliases.json).
     alias_target = aliases.get(normalized)
     if alias_target is not None:
         entry = district_index.get(_normalize(alias_target))
         if entry is not None:
             return {**entry, "geocode_method": "alias", "geocode_score": 1.0}
-
-    # 2. Exact normalised match against a real district name.
-    entry = district_index.get(normalized)
-    if entry is not None:
-        return {**entry, "geocode_method": "exact", "geocode_score": 1.0}
 
     # 3. Fuzzy match, rapidfuzz WRatio >= FUZZY_ACCEPT_SCORE (0-100 scale).
     match = process.extractOne(normalized, district_index.keys(), scorer=fuzz.WRatio)
