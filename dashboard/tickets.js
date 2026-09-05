@@ -251,28 +251,36 @@ function addTicket(ticket) {
 
 // Fetches GET /api/tickets (whose rows carry the messages join) into the
 // messageCache, then re-renders so live cards gain transcript + player.
-// Re-fetches at most once per 30 s window (replay bursts hit the cache).
-let _messageFieldsAt = 0;
+// Debounced with trailing-edge execution so bursts are batched, but no ticket
+// is ever dropped or starved.
+let _messageFieldsTimer = null;
 function _ensureMessageFields() {
-  if (Date.now() - _messageFieldsAt < 30000) return;
-  _messageFieldsAt = Date.now();
-  (async () => {
+  if (_messageFieldsTimer) return;
+  _messageFieldsTimer = setTimeout(async () => {
+    _messageFieldsTimer = null;
     try {
       const res = await fetch(`${window.CORE_URL}/api/tickets`);
       if (!res.ok) return;
       const { tickets: list } = await res.json();
+      let hasNew = false;
       for (const t of list) {
-        if (t.message_id == null || messageCache.has(t.message_id)) continue;
-        messageCache.set(t.message_id, {
-          modality:          t.modality,
-          audio_path:        t.audio_path,
-          audio_duration_s:  t.audio_duration_s,
-          raw_text:          t.raw_text,
-        });
+        if (t.message_id == null) continue;
+        const current = messageCache.get(t.message_id);
+        if (!current || (!current.audio_path && t.audio_path) || (!current.raw_text && t.raw_text)) {
+          messageCache.set(t.message_id, {
+            modality:          t.modality,
+            audio_path:        t.audio_path,
+            audio_duration_s:  t.audio_duration_s,
+            raw_text:          t.raw_text,
+          });
+          hasNew = true;
+        }
       }
-      applyFilters(); // re-render: transcripts + players now available
+      if (hasNew) {
+        applyFilters(); // re-render: transcripts + players now available
+      }
     } catch { /* core unreachable — cards stay without transcripts */ }
-  })();
+  }, 500);
 }
 
 function updateTicket(ticket) {
