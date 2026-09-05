@@ -30,8 +30,8 @@ function readback({ adm2, province, items, urgency }) {
 
 function readbackAck({ confirmed }) {
   return confirmed
-    ? "✅ *Shukriya!* Aap ki report confirm ho chuki hai aur rescue teams tak pohncha di gayi hai."
-    : "⚠️ *Noted!* Aap ki report review queue mein bhej di gayi hai taake rescue team dobara check kare.";
+    ? "✅ *Shukriya!* Aap ki report confirm ho chuki hai aur rescue dashboard par darj kar di gayi hai.\n\n⚠️ *Emergency?* Rescue *1122* / *1129* par call bhi karein."
+    : "⚠️ *Noted!* Aap ki report review queue mein darj kar di gayi hai taake rescue dispatcher dobara check kare.\n\n⚠️ *Emergency?* Rescue *1122* / *1129* par call bhi karein.";
 }
 
 function audioUnintelligible() {
