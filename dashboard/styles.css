@@ -562,8 +562,12 @@ body {
 }
 
 .stream-header {
-  display: flex; align-items: baseline; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   padding-bottom: 2px;
+}
+
+.stream-header-left {
+  display: flex; align-items: baseline; gap: 8px;
 }
 
 .stream-title {
@@ -575,6 +579,34 @@ body {
 .stream-count {
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px; color: var(--silt);
+}
+
+.stream-sort-ctrl {
+  display: flex; align-items: center;
+}
+
+.sort-select {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  padding: 3px 10px;
+  cursor: pointer;
+  outline: none;
+  transition: all 120ms var(--snap);
+}
+
+.sort-select:hover {
+  border-color: rgba(13, 110, 128, 0.45);
+  color: var(--ink);
+}
+
+.sort-select:focus {
+  border-color: var(--indus);
+  box-shadow: 0 0 0 2px var(--indus-wash);
 }
 
 /* Queue chips (was the left rail — filters.js targets these ids/classes) */

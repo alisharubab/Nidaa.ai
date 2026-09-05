@@ -6,6 +6,33 @@
 
 let activeUrgency = "all";
 let activeQueue   = "all";
+let activeSort    = localStorage.getItem("nidaa_sort_mode") || "urgency";
+
+// ---------------------------------------------------------------------------
+// Sorting helper (deterministic order across initial load, reload & live arrivals)
+// ---------------------------------------------------------------------------
+
+const URGENCY_RANK = {
+  critical: 4,
+  high: 3,
+  moderate: 2,
+  info: 1,
+};
+
+function sortTickets(list) {
+  return [...list].sort((a, b) => {
+    if (activeSort === "urgency") {
+      const wa = URGENCY_RANK[a.urgency] || 0;
+      const wb = URGENCY_RANK[b.urgency] || 0;
+      if (wb !== wa) return wb - wa; // Highest urgency first
+    }
+    // Chronological (newest first)
+    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+    if (tb !== ta) return tb - ta;
+    return (b.id || 0) - (a.id || 0);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Filter predicate
@@ -38,7 +65,8 @@ function applyFilters() {
 
   list.innerHTML = "";
 
-  const visible = tickets.filter(ticketMatchesFilter);
+  const filtered = tickets.filter(ticketMatchesFilter);
+  const visible  = sortTickets(filtered);
 
   // "Unhearable" queue: unintelligible messages yield status cards in
   // #status-stack, never tickets — the failure cards above ARE the content,
@@ -109,6 +137,17 @@ function initFilterChips() {
       queueList.querySelectorAll(".queue-item").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       activeQueue = btn.dataset.filter || "all";
+      applyFilters();
+    });
+  }
+
+  // Live feed sort selector
+  const sortSel = document.getElementById("sort-select");
+  if (sortSel) {
+    sortSel.value = activeSort;
+    sortSel.addEventListener("change", (e) => {
+      activeSort = e.target.value;
+      localStorage.setItem("nidaa_sort_mode", activeSort);
       applyFilters();
     });
   }

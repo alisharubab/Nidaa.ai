@@ -96,8 +96,16 @@
     <!-- Live Feed column (queue chips + voice cards) -->
     <section class="rail-stream" id="ticket-stream">
       <div class="stream-header">
-        <span class="stream-title">Live Feed</span>
-        <span class="stream-count" id="stream-count">0 tickets</span>
+        <div class="stream-header-left">
+          <span class="stream-title">Live Feed</span>
+          <span class="stream-count" id="stream-count">0 tickets</span>
+        </div>
+        <div class="stream-sort-ctrl">
+          <select id="sort-select" class="sort-select" aria-label="Sort tickets">
+            <option value="urgency">🚨 Urgency Priority</option>
+            <option value="newest">🕒 Newest First</option>
+          </select>
+        </div>
       </div>
 
       <!-- Queue chips (categorized triage views) -->
