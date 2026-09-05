@@ -205,6 +205,8 @@ function _renderDrawerContent(ticket) {
 
   const isConfirmed = state === "confirmed";
   const isDisputed  = state === "disputed";
+  const isAcked     = ticket.dispatcher_verdict === "verified";
+  const isFlagged   = ticket.dispatcher_verdict === "rejected";
 
   drawer.innerHTML = `
     <div class="drawer-header">
@@ -249,10 +251,10 @@ function _renderDrawerContent(ticket) {
       <div class="drawer-actions">
         <button class="btn-flag"
           onclick="flagTicket(${ticket.id})"
-          ${isDisputed ? "disabled" : ""}>Flag</button>
-        <button class="btn-ack"
+          ${isFlagged ? "disabled" : ""}>${isFlagged ? "⚠ Flagged" : "Flag"}</button>
+        <button class="btn-ack${isAcked ? " acked" : ""}"
           onclick="event.stopPropagation(); acknowledgeTicket(${ticket.id})"
-          ${isConfirmed ? "disabled" : ""}>Acknowledge</button>
+          ${isAcked ? "disabled" : ""}>${isAcked ? "✓ Acknowledged" : "Acknowledge"}</button>
       </div>
     </div>
   `;

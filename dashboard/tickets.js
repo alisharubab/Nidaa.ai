@@ -29,10 +29,8 @@ const URGENCY_LABELS = {
 const URGENCY_ORDER = ["critical", "high", "moderate", "info"];
 
 function verificationState(ticket) {
-  // Two independent columns: verification_status (sender reply) and
-  // dispatcher_verdict (Acknowledge/Flag). See PROGRESS.md CORE-02.
-  if (ticket.verification_status === "user_confirmed" ||
-      ticket.dispatcher_verdict === "verified") return "confirmed";
+  // Citizen-side verification via WhatsApp readback reply (1=confirmed, 2=disputed)
+  if (ticket.verification_status === "user_confirmed") return "confirmed";
   if (ticket.verification_status === "user_disputed") return "disputed";
   return "unconfirmed";
 }
@@ -150,7 +148,7 @@ function renderTicketCard(ticket) {
 
   const summary   = structuredSummary(ticket, items);
   const badges    = itemBadges(items);
-  const acked     = state === "confirmed";
+  const isAcked   = ticket.dispatcher_verdict === "verified";
 
   const card = document.createElement("div");
   card.className = `ticket-card urgency-${urgency}`;
@@ -185,8 +183,8 @@ function renderTicketCard(ticket) {
       ${badges ? `<div class="ticket-items">${badges}</div>` : ""}
       <div class="ticket-footer">
         <span class="state-dot ${state}">${state === "confirmed" ? "Confirmed" : state === "disputed" ? "Disputed" : "Unconfirmed"}</span>
-        <button class="btn-ack${acked ? " acked" : ""}" onclick="event.stopPropagation(); acknowledgeTicket(${ticket.id})"
-          ${acked ? "disabled" : ""}>${acked ? "✓ Acknowledged" : "Acknowledge"}</button>
+        <button class="btn-ack${isAcked ? " acked" : ""}" onclick="event.stopPropagation(); acknowledgeTicket(${ticket.id})"
+          ${isAcked ? "disabled" : ""}>${isAcked ? "✓ Acknowledged" : "Acknowledge"}</button>
       </div>
     </div>
   `;
@@ -322,7 +320,7 @@ function updateCounts() {
   const total        = activeTickets.length;
   const critical     = activeTickets.filter((t) => t.urgency === "critical").length;
   const unlocated    = activeTickets.filter((t) => t.latitude == null || t.longitude == null).length;
-  const acknowledged = activeTickets.filter((t) => t.dispatcher_verdict === "verified" || t.verification_status === "user_confirmed").length;
+  const acknowledged = activeTickets.filter((t) => t.dispatcher_verdict === "verified").length;
   const disputed     = activeTickets.filter((t) => t.verification_status === "user_disputed").length;
 
   const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
