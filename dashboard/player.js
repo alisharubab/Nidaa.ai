@@ -87,7 +87,7 @@ const VoicePlayer = (() => {
 
   function _onTick() {
     _notifyAll();
-    if (!_audio.paused && !Number.isNaN(_audio.duration)) {
+    if (!_audio.paused && !_audio.ended) {
       _rafId = requestAnimationFrame(_onTick);
     } else {
       _rafId = null;
@@ -95,10 +95,16 @@ const VoicePlayer = (() => {
   }
 
   function _startLoop() {
-    if (!_rafId) _rafId = requestAnimationFrame(_onTick);
+    if (!_rafId && !_audio.paused && !_audio.ended) {
+      _rafId = requestAnimationFrame(_onTick);
+    }
   }
 
   _audio.addEventListener("play", () => {
+    _startLoop();
+    _notifyAll();
+  });
+  _audio.addEventListener("playing", () => {
     _startLoop();
     _notifyAll();
   });
@@ -111,8 +117,18 @@ const VoicePlayer = (() => {
     _currentMsgId = null;
     _notifyAll();
   });
-  _audio.addEventListener("timeupdate", _notifyAll);
-  _audio.addEventListener("loadedmetadata", _notifyAll);
+  _audio.addEventListener("timeupdate", () => {
+    if (!_audio.paused && !_rafId) _startLoop();
+    _notifyAll();
+  });
+  _audio.addEventListener("loadedmetadata", () => {
+    if (!_audio.paused && !_rafId) _startLoop();
+    _notifyAll();
+  });
+  _audio.addEventListener("canplay", () => {
+    if (!_audio.paused && !_rafId) _startLoop();
+    _notifyAll();
+  });
 
   /**
    * Build a player element for a ticket's voice note.
@@ -144,16 +160,16 @@ const VoicePlayer = (() => {
     const canvas = root.querySelector(".vp-wave");
     const timeEl = root.querySelector(".vp-time");
 
-    const isThisPlaying = () => _currentMsgId === messageId && !_audio.paused;
+    const isThisPlaying = () => _currentMsgId != null && String(_currentMsgId) === String(messageId) && !_audio.paused;
 
     const total = () => {
-      if (_currentMsgId === messageId && Number.isFinite(_audio.duration) && _audio.duration > 0) {
+      if (String(_currentMsgId) === String(messageId) && Number.isFinite(_audio.duration) && _audio.duration > 0) {
         return _audio.duration;
       }
       return duration || 0;
     };
 
-    const elapsed = () => (_currentMsgId === messageId ? _audio.currentTime : 0);
+    const elapsed = () => (String(_currentMsgId) === String(messageId) ? _audio.currentTime : 0);
 
     function draw() {
       const dpr = window.devicePixelRatio || 1;
@@ -190,9 +206,9 @@ const VoicePlayer = (() => {
       const t = total();
       const e = elapsed();
       const playing = isThisPlaying();
-      timeEl.textContent = playing && t
+      timeEl.textContent = (playing || e > 0) && t > 0
         ? `${_fmtTime(e)} / ${_fmtTime(t)}`
-        : (t ? _fmtTime(t) : "—:—");
+        : (t > 0 ? _fmtTime(t) : "—:—");
     }
 
     function sync() {
@@ -212,13 +228,14 @@ const VoicePlayer = (() => {
       if (isThisPlaying()) {
         _audio.pause();
       } else {
-        if (_currentMsgId !== messageId) {
+        if (String(_currentMsgId) !== String(messageId) || _audio.src !== url) {
           _audio.src = url;
           _currentMsgId = messageId;
           _audio.currentTime = 0;
         }
         try {
           await _audio.play();
+          _startLoop();
         } catch (err) {
           console.warn("[player] playback failed:", err.message);
         }
@@ -238,13 +255,14 @@ const VoicePlayer = (() => {
       const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const dur = total();
       if (dur > 0) {
-        if (_currentMsgId !== messageId) {
+        if (String(_currentMsgId) !== String(messageId) || _audio.src !== url) {
           _audio.src = url;
           _currentMsgId = messageId;
         }
         _audio.currentTime = frac * dur;
         if (_audio.paused) {
           _audio.play().catch(() => {});
+          _startLoop();
         }
         _notifyAll();
       }
@@ -252,6 +270,7 @@ const VoicePlayer = (() => {
 
     // Initial paint and async peak decoding
     sync();
+    if (isThisPlaying()) _startLoop();
     _decodePeaks(messageId, url, 96).then(() => { if (root.isConnected) sync(); });
 
     return root;
