@@ -457,6 +457,12 @@ async def export_hxl():
         tickets = db.list_tickets(conn)
 
     buf = io.StringIO()
+    # Excel has no UTF-8 CSV auto-detection without a BOM -- without this it
+    # decodes as the system's ANSI codepage instead, turning every Urdu
+    # location_raw/loc_name into mojibake. The BOM itself is invisible in
+    # every other consumer (HDX, pandas, a text editor) that already
+    # correctly assumes UTF-8.
+    buf.write(chr(0xFEFF))
     writer = csv.writer(buf)
     writer.writerow(HXL_HEADER_HUMAN)
     writer.writerow(HXL_HEADER_TAGS)
