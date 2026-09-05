@@ -179,7 +179,11 @@ async function start({ onInbound }) {
           const msg = parseNotification(notif);
           if (msg) {
             onInbound(msg).catch((err) => {
-              console.error("[greenapi] async handler error:", err.message);
+              // err.cause carries the real reason for a generic "fetch
+              // failed" (DNS/connect/protocol issue) that err.message alone
+              // doesn't show -- e.g. this is exactly what surfaced the
+              // missing http:// scheme on a Render fromService URL.
+              console.error("[greenapi] async handler error:", err.message, err.cause || "");
             });
           }
         } catch (err) {
