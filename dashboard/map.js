@@ -86,7 +86,7 @@ function pinOptions(ticket) {
   const urgency = ticket.urgency || "info";
   const { fill, border } = URGENCY_COLOURS()[urgency] || URGENCY_COLOURS().info;
   const state =
-    ticket.verification_status === "user_confirmed" || ticket.dispatcher_verdict === "verified"
+    ticket.verification_status === "user_confirmed"
       ? "confirmed"
       : ticket.verification_status === "user_disputed"
         ? "disputed"
@@ -105,7 +105,7 @@ function pinOptions(ticket) {
 }
 
 function stateLabel(ticket) {
-  if (ticket.verification_status === "user_confirmed" || ticket.dispatcher_verdict === "verified") return "✓ Confirmed";
+  if (ticket.verification_status === "user_confirmed") return "✓ Confirmed";
   if (ticket.verification_status === "user_disputed") return "⚠ Disputed";
   return "Unconfirmed";
 }
