@@ -42,17 +42,17 @@ services:
           property: connectionString
       - key: DEMO_MODE
         value: "false"
-      # Private-network reference, not the public URL: Render assigns the
-      # public *.onrender.com subdomain with an unpredictable suffix on name
-      # collision (bit us on nidaa-core itself), so a hardcoded guess here
-      # would silently break. fromService resolves to "host:port" on the
-      # shared private network instead -- self-healing on every redeploy.
-      # config.py prepends http:// since this comes back scheme-less.
+      # Public URL, not fromService/private-network: tried that first, but
+      # Render's private network requires BOTH sides to be able to receive
+      # private traffic, and free-tier web services can only *send* it, not
+      # receive it (confirmed after nidaa-ingest's first real message failed
+      # with getaddrinfo ENOTFOUND trying to reach nidaa-core privately) --
+      # a hard free-tier limitation, not something fixable in this file.
+      # nidaa-ingest's own public URL has been stable across every deploy so
+      # far (no subdomain-collision suffix, unlike nidaa-core), so this one
+      # is safe to hardcode.
       - key: INGEST_URL
-        fromService:
-          name: nidaa-ingest
-          type: web
-          property: hostport
+        value: https://nidaa-ingest.onrender.com
       - key: STT_MODEL_PRIMARY
         value: whisper-large-v3-turbo
       - key: STT_MODEL_ESCALATION
@@ -88,19 +88,16 @@ services:
     startCommand: node index.js
     healthCheckPath: /health
     envVars:
-      # Same private-network reference as nidaa-core's INGEST_URL above, and
-      # for the same reason -- self-healing against Render's unpredictable
-      # public-subdomain suffixing instead of a hardcoded guess.
+      # Public URL, not fromService: free-tier services can't receive
+      # private-network traffic (see nidaa-core's INGEST_URL comment above
+      # for what that broke). nidaa-core's public URL got an unpredictable
+      # suffix on a name collision, so unlike INGEST_URL below this can't be
+      # hardcoded reliably -- set it manually once (like GREEN_API_TOKEN
+      # etc.), same value as nidaa-dashboard's NIDAA_CORE_PUBLIC_URL.
       - key: CORE_URL
-        fromService:
-          name: nidaa-core
-          type: web
-          property: hostport
+        sync: false
       - key: INGEST_URL
-        fromService:
-          name: nidaa-ingest
-          type: web
-          property: hostport
+        value: https://nidaa-ingest.onrender.com
       # greenapi (HTTP polling) is the Render-deployable transport -- it
       # needs no persistent local auth state, unlike Baileys' direct-socket
       # pairing (useMultiFileAuthState), which won't survive this service's
