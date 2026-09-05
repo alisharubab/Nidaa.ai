@@ -4,7 +4,13 @@
 // This module never touches nidaa.db directly (docs/ARCHITECTURE.md 2.1) --
 // it calls core/'s /internal/consent/check and /internal/consent/revoke.
 
-const CORE_URL = process.env.CORE_URL || "http://127.0.0.1:8000";
+const { withScheme } = require("./url");
+
+// Independent copy of index.js's CORE_URL -- this module never imports
+// index.js (would create a circular require), so it reads+normalizes the
+// env var itself rather than trusting index.js already did it. See url.js
+// for why the scheme prefix matters on Render.
+const CORE_URL = withScheme(process.env.CORE_URL || "http://127.0.0.1:8000");
 
 /**
  * Call once per inbound message, before anything else. Returns
