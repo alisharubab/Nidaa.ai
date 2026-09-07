@@ -9,6 +9,26 @@ AVG_LOGPROB_MIN = -0.90
 COMPRESSION_MAX = 2.40
 MIN_CONTENT_TOKENS = 5
 
+# Whisper's `prompt` biases its decoder toward these tokens without hard-
+# constraining the transcript to them (unlike `language`). Without this,
+# language="ur" pushes the decoder to force every acoustic frame into Urdu
+# vocabulary, so common English loanwords a Pakistani speaker code-switches
+# in ("boats", "rations", "medical kit") get mapped to acoustically-similar
+# but wrong Urdu words instead (e.g. "boats" -> "بہت"/bohat = "a lot") --
+# the LLM downstream then has nothing to extract. Bilingual on purpose: an
+# all-Urdu prompt suppresses the English words this is meant to protect,
+# an all-English one risks nudging transcription toward English. Kept
+# under ~50 words / ~300 characters, comfortably inside Whisper's prompt
+# token budget (~224 tokens) -- a prompt that gets silently truncated loses
+# exactly the biasing tokens it was added for.
+CRISIS_PROMPT = (
+    "سیلاب، امدادی کارروائی، ریسکیو، راشن، کشتیاں، خیمے، دوائیاں، پینے کا صاف پانی، "
+    "بچے، حاملہ خواتین، بزرگ، پھنسے ہوئے، مکانات گر گئے، بند ٹوٹ گیا، "
+    "boats, rescue boats, rations, dry ration, food packs, tents, tarpaulin, "
+    "medical camp, medicines, ORS, snake bite, pregnant women, casualties, "
+    "trapped, flood relief."
+)
+
 _client = None
 
 
@@ -19,11 +39,19 @@ def _get_client() -> Groq:
     return _client
 
 
-def transcribe(audio_path: str, model: str = STT_MODEL_PRIMARY) -> dict:
+def transcribe(audio_path: str, model: str = STT_MODEL_PRIMARY, temperature: float = 0.0) -> dict:
     """Calls Groq's Whisper endpoint with response_format=verbose_json,
-    temperature=0.0, language="ur" (hint, not hard constraint). Returns a
-    plain dict (not the SDK's response object) so downstream code and the
-    DB layer don't need to know about the Groq SDK's types.
+    language="ur" (hint, not hard constraint), and CRISIS_PROMPT to bias
+    against code-switched English loanwords being misheard as Urdu.
+    Returns a plain dict (not the SDK's response object) so downstream code
+    and the DB layer don't need to know about the Groq SDK's types.
+
+    `temperature` defaults to 0.0 (deterministic) but main.py's escalation
+    call raises it for the retry -- temperature=0.0 is exactly what can lock
+    Whisper into a repetition loop on noisy audio (the same failure
+    gate_failure_reason() detects via COMPRESSION_MAX); a little sampling
+    randomness on the second attempt gives it a chance to escape one instead
+    of deterministically reproducing the same loop.
 
     Confirmed working against real Urdu audio via CORE-05's smoke test.
     """
@@ -33,8 +61,9 @@ def transcribe(audio_path: str, model: str = STT_MODEL_PRIMARY) -> dict:
             file=f,
             model=model,
             language="ur",
+            prompt=CRISIS_PROMPT,
             response_format="verbose_json",
-            temperature=0.0,
+            temperature=temperature,
         )
     return {
         "text": resp.text,
