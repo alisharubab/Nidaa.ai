@@ -1,29 +1,206 @@
 {
-  "run_at": "2026-09-02T20:42:01",
+  "run_at": "2026-09-07T21:52:15",
   "n_total": 10,
   "n_scored": 10,
   "n_skipped": 0,
   "skipped": [],
   "accuracy": {
-    "overall": 0.0,
-    "district": 0.0,
-    "intent": 0.0,
+    "overall": 0.3,
+    "district": 0.4,
+    "intent": 0.6,
     "unintelligible_outcome": null,
     "n": 10,
     "n_extracted": 10,
     "n_unintelligible": 0
   },
-  "tiers": {},
+  "tiers": {
+    "clean": {
+      "n": 5,
+      "passed": 3
+    },
+    "moderate": {
+      "n": 5,
+      "passed": 0
+    }
+  },
   "ttt_ms": {
-    "median": 10262.0,
-    "p95": 11405.6,
-    "n": 2
+    "median": 10457.9,
+    "p95": 20431.0,
+    "n": 11
   },
   "cases": [
     {
-      "id": "t01",
-      "modality": "text",
-      "tier": null,
+      "id": "a01",
+      "modality": "audio",
+      "tier": "clean",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": true,
+      "intent_ok": true,
+      "pass": true,
+      "ttt_ms": [
+        8483.8
+      ],
+      "tickets": [
+        {
+          "district": "Dadu",
+          "intent": "resource_request",
+          "urgency": "critical",
+          "pcode": "PK703"
+        }
+      ]
+    },
+    {
+      "id": "a02",
+      "modality": "audio",
+      "tier": "clean",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": false,
+      "intent_ok": true,
+      "pass": false,
+      "ttt_ms": [
+        12061.3
+      ],
+      "tickets": [
+        {
+          "district": null,
+          "intent": "incident_report",
+          "urgency": "critical",
+          "pcode": null
+        }
+      ]
+    },
+    {
+      "id": "a03",
+      "modality": "audio",
+      "tier": "clean",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": true,
+      "intent_ok": true,
+      "pass": true,
+      "ttt_ms": [
+        10457.9
+      ],
+      "tickets": [
+        {
+          "district": "Sukkur",
+          "intent": "resource_request",
+          "urgency": "critical",
+          "pcode": "PK723"
+        }
+      ]
+    },
+    {
+      "id": "a04",
+      "modality": "audio",
+      "tier": "clean",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": false,
+      "intent_ok": true,
+      "pass": false,
+      "ttt_ms": [
+        6166.7
+      ],
+      "tickets": [
+        {
+          "district": null,
+          "intent": "infrastructure_damage",
+          "urgency": "moderate",
+          "pcode": null
+        }
+      ]
+    },
+    {
+      "id": "a05",
+      "modality": "audio",
+      "tier": "clean",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": true,
+      "intent_ok": true,
+      "pass": true,
+      "ttt_ms": [
+        4636.4
+      ],
+      "tickets": [
+        {
+          "district": null,
+          "intent": "non_actionable",
+          "urgency": "info",
+          "pcode": null
+        }
+      ]
+    },
+    {
+      "id": "a06",
+      "modality": "audio",
+      "tier": "moderate",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": false,
+      "intent_ok": true,
+      "pass": false,
+      "ttt_ms": [
+        14118.8
+      ],
+      "tickets": [
+        {
+          "district": null,
+          "intent": "resource_request",
+          "urgency": "critical",
+          "pcode": null
+        }
+      ]
+    },
+    {
+      "id": "a07",
+      "modality": "audio",
+      "tier": "moderate",
+      "expected_outcome": "extracted",
+      "status": "extracted",
+      "error_code": null,
+      "skipped": false,
+      "skip_reason": null,
+      "district_ok": true,
+      "intent_ok": false,
+      "pass": false,
+      "ttt_ms": [
+        20431.0
+      ],
+      "tickets": [
+        {
+          "district": "Kambar Shahdad Kot",
+          "intent": "resource_request",
+          "urgency": "critical",
+          "pcode": "PK709"
+        }
+      ]
+    },
+    {
+      "id": "a08",
+      "modality": "audio",
+      "tier": "moderate",
       "expected_outcome": "extracted",
       "status": "extracted",
       "error_code": null,
@@ -33,158 +210,71 @@
       "intent_ok": false,
       "pass": false,
       "ttt_ms": [
-        9118.3,
-        11405.6
+        17071.2,
+        19571.2
       ],
       "tickets": [
         {
-          "district": "Larkana",
+          "district": "Multan",
           "intent": "resource_request",
-          "urgency": "moderate",
-          "pcode": "PK713"
+          "urgency": "high",
+          "pcode": "PK622"
         },
         {
-          "district": "Sukkur",
-          "intent": "resource_request",
-          "urgency": "moderate",
-          "pcode": "PK723"
+          "district": null,
+          "intent": "incident_report",
+          "urgency": "critical",
+          "pcode": null
         }
       ]
     },
     {
-      "id": "t02",
-      "modality": "text",
-      "tier": null,
+      "id": "a09",
+      "modality": "audio",
+      "tier": "moderate",
       "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
+      "status": "extracted",
+      "error_code": null,
       "skipped": false,
       "skip_reason": null,
       "district_ok": false,
       "intent_ok": false,
       "pass": false,
-      "ttt_ms": [],
-      "tickets": []
+      "ttt_ms": [
+        6638.9
+      ],
+      "tickets": [
+        {
+          "district": null,
+          "intent": "non_actionable",
+          "urgency": "info",
+          "pcode": null
+        }
+      ]
     },
     {
-      "id": "t03",
-      "modality": "text",
-      "tier": null,
+      "id": "a10",
+      "modality": "audio",
+      "tier": "moderate",
       "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
+      "status": "extracted",
+      "error_code": null,
       "skipped": false,
       "skip_reason": null,
       "district_ok": false,
       "intent_ok": false,
       "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t04",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t05",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t06",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t07",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t08",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t09",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
-    },
-    {
-      "id": "t10",
-      "modality": "text",
-      "tier": null,
-      "expected_outcome": "extracted",
-      "status": "failed",
-      "error_code": "RATE_LIMITED",
-      "skipped": false,
-      "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
-      "ttt_ms": [],
-      "tickets": []
+      "ttt_ms": [
+        9453.3
+      ],
+      "tickets": [
+        {
+          "district": null,
+          "intent": "incident_report",
+          "urgency": "high",
+          "pcode": null
+        }
+      ]
     }
   ]
 }
