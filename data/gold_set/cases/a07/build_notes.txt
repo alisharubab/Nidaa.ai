@@ -1,0 +1,1 @@
+SNR: +5dB. Noise bed: synthetic pink noise (ffmpeg anoisesrc), 15s loop, no real rain/wind recording available. Source: audio_clean_source.ogg (real human recording), mixed via tools/degrade_audio.py. Alisha, 2026-09-07.
