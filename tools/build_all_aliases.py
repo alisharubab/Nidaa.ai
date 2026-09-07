@@ -213,7 +213,7 @@ def build_aliases(tehsil_precision=False):
         'Hyderabad': ['حیدرآباد', 'حیدر اباد', 'hyderabad', 'hyder abad', 'hyd'],
         'Jacobabad': ['جیکب آباد', 'جیکب اباد', 'جیکبہ', 'جیکبہ بابات', 'jacobabad', 'jakobabad', 'jacob abad', 'jikba', 'jikba babat'],
         'Jamshoro': ['جامشورو', 'جام شورو', 'jamshuro', 'jam shoro', 'jamshoro'],
-        'Kambar Shahdad Kot': ['قمبر شہداد کوٹ', 'قمبر', 'شہداد کوٹ', 'قمبر شہدادکوٹ', 'qambar shahdadkot', 'kamber shahdadkot', 'shahdadkot', 'qambar', 'kambar', 'qambar shahdad kot'],
+        'Kambar Shahdad Kot': ['قمبر شہداد کوٹ', 'قمبر', 'کمبر', 'شہداد کوٹ', 'قمبر شہدادکوٹ', 'qambar shahdadkot', 'kamber shahdadkot', 'shahdadkot', 'qambar', 'kambar', 'qambar shahdad kot'],
         'Kashmore': ['کشمور', 'قشمور', 'kashmore', 'kashmor', 'qashmore', 'kandhkot'],
         'Khairpur': ['خیرپور', 'خیر پور', 'khairpur', 'khairpoor', 'khairpur mirs', 'xairpur'],
         'Korangi Karachi': ['کورنگی', 'کراچی کورنگی', 'korangi'],
