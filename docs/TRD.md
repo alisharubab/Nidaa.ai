@@ -436,6 +436,19 @@ Rule triggers forcing `critical`: presence of casualty or injury terms, child or
 
 No vector database in the MVP. Key on `(adm2_name, intent, normalised_primary_item, 15-minute bucket)`. A collision sets `duplicate_of` on the newer ticket and the dashboard clusters them under one expandable pin. Duplicates are flagged and counted, never deleted, because twelve reports of one bridge is itself a signal about severity.
 
+### 4.8 Multi-turn follow-up stitching (Pillar 4)
+
+**Added 2026-09-07 (Alisha).** A sender's first message is frequently incomplete (a district but no headcount, an incident but no items needed). Before this addendum, a follow-up reply supplying the missing piece created its own free-standing, usually Unlocated ticket instead of completing the original one.
+
+No new DB columns, no new HTTP route, no second LLM call — this is entirely internal to `main.py`'s `_run_pipeline` orchestrator and `db.py`, reusing the extraction that already runs on every message:
+
+1. **Open-ticket lookup** (`db.find_open_ticket_for_sender`): a sender's most recent ticket where `missing_fields` is still non-empty and `created_at` is within `FOLLOWUP_SESSION_TTL_MINUTES` (20, matching the pace of a WhatsApp back-and-forth — not a sender resuming the thread hours later).
+2. **Classification, deliberately conservative**: only a message whose extraction yields exactly one record with a null `location_raw` is treated as a follow-up candidate. Anything naming its own place, or yielding multiple records, is unambiguous enough to stand alone and always becomes a new ticket — this avoids ever folding an unrelated new incident into someone else's open ticket.
+3. **Merge** (`db.merge_into_ticket`): additive and escalate-only, same spirit as `blended_urgency`'s `max()` rule (4.6) — fills `people_affected`/`casualties` only if currently `NULL`, appends new `items` (deduped by item name), takes the max of old/new `urgency`, and drops any `missing_fields` entry the follow-up answered. Never overwrites or downgrades a field the sender already gave. Emits `ticket.updated` (existing `events.kind`), not `ticket.created`.
+4. **Re-confirmation**: once merged, if the ticket now has a district and the follow-up's own `extraction_confidence` clears `READBACK_MIN_CONFIDENCE`, the `readback` template fires again with the updated `adm2`/`items`/`urgency` — the sender sees their follow-up landed on the right report, not a silent no-op.
+
+Known limitation: `missing_fields` is LLM free text, not an enum — only `"location"` is a literal, prompt-guaranteed token (system prompt rule 3, section 5 below). Recognising that `people_affected`/`casualties`/`items` were answered uses a best-effort keyword match (`_drop_filled_missing_fields` in `main.py`), not exact removal. Worst case a stale entry lingers in `missing_fields`; it can never cause a *wrong* merge, since `merge_into_ticket` only ever fills a currently-`NULL` field.
+
 ---
 
 ## 5. System Prompt (extraction)
