@@ -114,6 +114,56 @@ def build_aliases(tehsil_precision=False):
     # High-priority base dictionary (never overwritten by heuristics)
     base_aliases = {}
 
+    # Collision safety net for the CURATED maps below (URDU_MAP/TEHSIL_MAP).
+    # Added after a real production bug: this script generated a "dir" ->
+    # "Lower Dir" alias and "naseerabad"/"nasir abad" -> "Nasirabad" aliases
+    # with no collision checking -- "Dir" is a real tehsil, but only of
+    # Upper Dir; "Naseerabad"/"Nasir Abad" are real tehsils of Muzaffarabad
+    # and Kambar Shahdad Kot respectively, not Nasirabad district. The
+    # algorithmic layers further down already guard against a generated
+    # variant colliding with a literal district name (`district_normalized_map`)
+    # and against ambiguous multi-district tehsil names (`tehsil_counts[tehsil]
+    # > 1`), but neither of those catches THIS pattern: a tehsil that
+    # unambiguously belongs to exactly one district, hand-typed into a
+    # DIFFERENT district's variant list by mistake. That can only happen in
+    # a hand-curated entry -- the algorithmic generator always maps a
+    # tehsil's own variants to that tehsil's own true district, so it can't
+    # introduce this class of bug on its own.
+    #
+    # IMPORTANT: this check must ALSO gate which explicit URDU_MAP/TEHSIL_MAP
+    # strings are allowed to seed generate_phonetic_variants() below (section
+    # 3/4) -- that generator always includes its own input string in its
+    # output (its first line is `variants = set([norm])`), so an unsafe
+    # explicit_var re-enters the alias set through generated_district_aliases/
+    # generated_tehsil_aliases even when base_aliases correctly rejected it.
+    # Filtering only the curated-layer write and not the generator input was
+    # tried first and confirmed NOT sufficient -- the bad alias came back
+    # through the algorithmic layer regardless.
+    tehsil_owner = {}
+    for r in rows:
+        t = _normalize(r["adm3_name"])
+        if t:
+            tehsil_owner.setdefault(t, set()).add(r["adm2_name"].strip())
+
+    def _is_safe_curated(key, target):
+        """True unless `key` is a real tehsil belonging to a specific
+        district OTHER than `target` -- see the note above for why only
+        this exact pattern needs a check here."""
+        k = _normalize(key)
+        if not k:
+            return False
+        owners = tehsil_owner.get(k)
+        if owners and len(owners) == 1 and target not in owners and target in valid_districts:
+            return False  # k is a real tehsil of a specific district, but target names a different one
+        return True
+
+    def safe_curated_set(target_dict, key, target):
+        """Only writes key->target into a curated (URDU_MAP/TEHSIL_MAP) dict
+        if _is_safe_curated() allows it."""
+        k = _normalize(key)
+        if k and _is_safe_curated(key, target):
+            target_dict[k] = target
+
     # 1. Comprehensive Urdu and Roman variants for all 160 districts
     URDU_MAP = {
         # Punjab
@@ -296,7 +346,7 @@ def build_aliases(tehsil_precision=False):
         if dist not in valid_districts:
             continue
         for var in var_list:
-            base_aliases[_normalize(var)] = dist
+            safe_curated_set(base_aliases, var, dist)
 
     # 2. Tehsils explicit mapping (Curated Urdu + transliterations)
     TEHSIL_MAP = {
@@ -353,20 +403,39 @@ def build_aliases(tehsil_precision=False):
         'Mingora': ['مینگورہ', 'mingora'],
     }
 
-    tehsil_to_district = {r["adm3_name"].strip(): r["adm2_name"].strip() for r in rows}
+    # Keyed by space-collapsed normalized name, not the raw string: several
+    # TEHSIL_MAP keys below don't exactly match the gazetteer's own spelling
+    # ("Balakot" here vs. "Bala Kot" in the CSV; "Sehwan"/"Fazilpur"/"Winder"/
+    # "Gharo"/"Keti Bandar"/"Turbat" don't match under any spacing at all --
+    # they may not exist as a distinct adm3 row in this 577-row gazetteer).
+    # A plain dict .get(teh, teh) silently fell back to using the TEHSIL_MAP
+    # key ITSELF as the target on a miss -- a tehsil-shaped string being
+    # written into what must always be a real district name, breaking every
+    # var under that entry (confirmed: they all resolved to `none` end to
+    # end through geocode(), a safe failure, but a silent, needless one).
+    tehsil_to_district = {}
+    for r in rows:
+        k = r["adm3_name"].strip().lower().replace(" ", "")
+        tehsil_to_district[k] = r["adm2_name"].strip()
 
     # Explicit tehsil mappings
     for teh, var_list in TEHSIL_MAP.items():
-        target = teh if tehsil_precision else tehsil_to_district.get(teh, teh)
+        if tehsil_precision:
+            target = teh
+        else:
+            target = tehsil_to_district.get(teh.strip().lower().replace(" ", ""))
+            if target is None:
+                continue  # tehsil not found in the gazetteer under any spelling -- skip, don't guess
         for var in var_list:
-            base_aliases[_normalize(var)] = target
+            safe_curated_set(base_aliases, var, target)
 
     # 3. Build Algorithmic Variations for ALL 160 Districts
     generated_district_aliases = {}
     for dist in valid_districts:
         variants = generate_phonetic_variants(dist)
         for explicit_var in URDU_MAP.get(dist, []):
-            variants.update(generate_phonetic_variants(explicit_var))
+            if _is_safe_curated(explicit_var, dist):
+                variants.update(generate_phonetic_variants(explicit_var))
         for v in variants:
             generated_district_aliases[v] = dist
 
@@ -388,7 +457,8 @@ def build_aliases(tehsil_precision=False):
 
         variants = generate_phonetic_variants(tehsil)
         for explicit_var in TEHSIL_MAP.get(tehsil, []):
-            variants.update(generate_phonetic_variants(explicit_var))
+            if _is_safe_curated(explicit_var, target):
+                variants.update(generate_phonetic_variants(explicit_var))
 
         for v in variants:
             generated_tehsil_aliases[v] = target
@@ -396,14 +466,33 @@ def build_aliases(tehsil_precision=False):
     # 5. Assembly with Strict Collision Guards
     final_aliases = {}
 
+    # Layer 3 vs 4 collision guard: the two algorithmic layers are generated
+    # completely independently (one from each district's canonical name and
+    # explicit variants, the other from each tehsil's), and a spacing/suffix
+    # split of a district's OWN name can coincidentally produce the same
+    # string as a real, different tehsil's own name -- found via a real
+    # case: splitting "Nasirabad" (the district) on its "abad" suffix
+    # produces "nasir abad", which is ALSO the literal name of an unrelated
+    # tehsil in Kambar Shahdad Kot. Blindly letting one layer win (the
+    # original code let Layer 3 always overwrite Layer 4) silently prefers
+    # whichever layer happens to run last, not whichever is actually
+    # correct. Any key both layers agree on is fine either way; any key
+    # they DISAGREE on is a genuine ambiguity and dropped from both, same
+    # "unindexed rather than guessed" principle as every other collision
+    # guard in this file.
+    ambiguous_layer_keys = {
+        k for k, v in generated_district_aliases.items()
+        if k in generated_tehsil_aliases and generated_tehsil_aliases[k] != v
+    }
+
     # Layer 4: Generated Tehsil Aliases
     for k, v in generated_tehsil_aliases.items():
-        if k not in district_normalized_map:
+        if k not in district_normalized_map and k not in ambiguous_layer_keys:
             final_aliases[k] = v
 
-    # Layer 3: Generated District Aliases (overwrites tehsil heuristics if collision)
+    # Layer 3: Generated District Aliases
     for k, v in generated_district_aliases.items():
-        if k not in district_normalized_map:
+        if k not in district_normalized_map and k not in ambiguous_layer_keys:
             final_aliases[k] = v
 
     # Layer 2: Curated Base Aliases (always wins over heuristics)
