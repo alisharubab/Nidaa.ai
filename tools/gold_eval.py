@@ -185,8 +185,17 @@ def run_case(case: dict) -> dict:
         "expected_outcome": case["expected"]["outcome"], "status": None,
         "error_code": None, "skipped": False, "skip_reason": None,
     }
+    # sender_hash carries a timestamp too, not just wa_message_id (Pillar 4,
+    # docs/TRD.md 4.8): a fixed "gold_<case id>" hash reused run over run
+    # meant a same-day re-run could land inside FOLLOWUP_SESSION_TTL_MINUTES
+    # of an earlier run's ticket and get silently folded into it instead of
+    # creating a fresh one -- _read_tickets() below keys strictly on this
+    # run's message_id, so a merge elsewhere reads back as zero tickets, not
+    # a scoring miss. One real run hit this for a05/a02/a06/a09 before this
+    # fix (self-inflicted, not a pipeline bug) -- discovered by comparing
+    # two runs 6 minutes apart and finding a "PASS" go to zero tickets.
     payload = {
-        "sender_hash": f"gold_{case['id']}",
+        "sender_hash": f"gold_{case['id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "phone_tail": "0000",
         "wa_message_id": f"gold-{case['id']}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
     }
