@@ -242,6 +242,32 @@ async def _run_pipeline(message_id: int) -> None:
 
         gate_failure = stt.gate_failure_reason(result)
         gate_passed = gate_failure is None
+
+        if escalated and gate_passed:
+            # Hallucination check (docs/TRD.md 4.3 addendum): escalation
+            # recovering a primary-gate failure is exactly the situation
+            # that produced a13 in the gold set -- Whisper hallucinated a
+            # fluent, unrelated sentence that scored confidently on every
+            # existing metric (nothing about a single call's own
+            # self-reported confidence can tell "grounded" from
+            # "confidently invented"). One more independent sample at the
+            # same escalation model/temperature: real speech is stable
+            # across a resample, a hallucination usually isn't.
+            try:
+                resample = await call_with_retry(
+                    stt_bucket, stt.transcribe, msg["audio_path"],
+                    model=STT_MODEL_ESCALATION, temperature=0.2,
+                )
+                if not stt.transcripts_agree(result["text"], resample["text"]):
+                    gate_passed = False
+                    gate_failure = "STT_MODEL_DISAGREEMENT"
+            except groq.APIError:
+                # The consistency check itself is extra scrutiny, not the
+                # primary decision -- if Groq can't be reached for a third
+                # call, fall back to trusting the escalated result rather
+                # than failing a message over an unrelated API outage.
+                pass
+
         transcript = result["text"]
         with db.get_connection() as conn:
             db.update_message_status(
