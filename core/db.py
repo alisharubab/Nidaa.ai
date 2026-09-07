@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from config import DB_PATH, AUDIO_TTL_HOURS, DATABASE_URL, IS_POSTGRES
 from events import append_event
+from pipeline.urgency import URGENCY_ORDER
 
 if IS_POSTGRES:
     import psycopg2
@@ -449,6 +450,67 @@ def find_pending_readback_ticket(conn, sender_hash: str) -> dict | None:
         (sender_hash,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def find_open_ticket_for_sender(conn, sender_hash: str, ttl_minutes: int) -> dict | None:
+    """Pillar 4 (multi-turn stitching, docs/TRD.md section 4.8): the
+    most recent ticket for this sender that still has outstanding
+    missing_fields and was created within the last ttl_minutes -- what a
+    follow-up message with no location of its own implicitly continues.
+    Unlike find_pending_readback_ticket above (which tracks the 1/2
+    confirmation reply and requires readback_sent_at), this only requires
+    the ticket to still be incomplete -- a sender can supply missing info
+    before or after confirming."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)).isoformat()
+    row = conn.execute(
+        """SELECT tickets.* FROM tickets
+           JOIN messages ON tickets.message_id = messages.id
+           WHERE messages.sender_hash = ?
+             AND tickets.missing_fields IS NOT NULL
+             AND tickets.missing_fields != '[]'
+             AND tickets.created_at >= ?
+           ORDER BY tickets.created_at DESC LIMIT 1""",
+        (sender_hash, cutoff),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def merge_into_ticket(conn, ticket_id: int, *, people_affected=None, casualties=None,
+                       new_items=None, urgency=None, missing_fields=None) -> None:
+    """Pillar 4: applies a follow-up message's extracted fields onto an
+    already-open ticket instead of inserting a new row. Deliberately
+    additive/escalate-only, same spirit as blended_urgency's max() rule
+    (pipeline/urgency.py) -- a follow-up can fill a gap or raise urgency,
+    never blank out or downgrade something the sender already told us."""
+    ticket = get_ticket(conn, ticket_id)
+
+    fields, values = [], []
+    if people_affected is not None and ticket["people_affected"] is None:
+        fields.append("people_affected = ?")
+        values.append(people_affected)
+    if casualties is not None and ticket["casualties"] is None:
+        fields.append("casualties = ?")
+        values.append(casualties)
+    if new_items:
+        existing_items = json.loads(ticket["items_json"] or "[]")
+        existing_names = {i["item"] for i in existing_items}
+        merged_items = existing_items + [i for i in new_items if i["item"] not in existing_names]
+        fields.append("items_json = ?")
+        values.append(json.dumps(merged_items))
+    if urgency is not None:
+        merged_urgency = max(ticket["urgency"], urgency, key=URGENCY_ORDER.index)
+        fields.append("urgency = ?")
+        values.append(merged_urgency)
+    if missing_fields is not None:
+        fields.append("missing_fields = ?")
+        values.append(json.dumps(missing_fields))
+
+    if not fields:
+        return
+    values.append(ticket_id)
+    conn.execute(f"UPDATE tickets SET {', '.join(fields)} WHERE id = ?", values)
+    append_event(conn, "ticket.updated", get_ticket(conn, ticket_id))
+    conn.commit()
 
 
 def list_tickets(conn, *, urgency: list[str] | None = None, adm2: str | None = None,
