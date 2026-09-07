@@ -70,8 +70,8 @@ def on_startup():
     # re-parsing the gazetteer/aliases/prompt files on every single ticket
     # would be wasted I/O on the hot path, same reasoning as
     # extract.load_system_prompt()'s own internal cache.
-    district_index = geocode.build_district_index(geocode.load_gazetteer())
     aliases = geocode.load_aliases()
+    district_index = geocode.build_district_index(geocode.load_gazetteer(), aliases)
     load_system_prompt()
     pipeline_queue = PipelineQueue(handler=_run_pipeline)
     pipeline_queue.start()
@@ -117,7 +117,17 @@ async def readback_reply(request: Request):
             return {"ok": True, "ticket_id": None}
         db.update_verification(conn, ticket["id"], "user_confirmed" if reply == "1" else "user_disputed")
 
-    await _fire_reply(sender_hash, "readback_ack", {"confirmed": reply == "1"})
+    # Pillar 5 (Ali's diagnosis): a bare "confirmed: true" leaves the sender
+    # unable to tell WHICH ticket they just answered when they have more
+    # than one pending readback (find_pending_readback_ticket is LIFO, so a
+    # confirm/dispute can land on a different report than the one the
+    # sender meant). Forwarding district + items lets ingest/'s template
+    # say e.g. "Confirmed for Muzaffargarh (20 khana, 20 pani)" instead.
+    await _fire_reply(sender_hash, "readback_ack", {
+        "confirmed": reply == "1",
+        "adm2": ticket["adm2_name"],
+        "items": _format_items_for_readback(json.loads(ticket["items_json"] or "[]")),
+    })
     return {"ok": True, "ticket_id": ticket["id"]}
 
 
@@ -184,7 +194,12 @@ async def _run_pipeline(message_id: int) -> None:
             escalated = False
             if not stt.passes_confidence_gate(result):
                 escalated = True
-                result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_ESCALATION)
+                # temperature=0.2 on the retry (Pillar 3): temperature=0.0 is
+                # exactly what can lock Whisper into a repetition loop on
+                # noisy audio -- a little sampling randomness gives the
+                # escalation model a chance to escape one instead of
+                # deterministically reproducing the same failure.
+                result = await call_with_retry(stt_bucket, stt.transcribe, msg["audio_path"], model=STT_MODEL_ESCALATION, temperature=0.2)
         except groq.APIError:
             # CORE-24: call_with_retry already exhausted 3 attempts with
             # backoff (docs/TRD.md 4.1) -- this is Groq itself being down
