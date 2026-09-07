@@ -1,6 +1,7 @@
 # Stage 1: transcription + confidence gate + escalation. docs/TRD.md 4.3.
 
 from groq import Groq
+from rapidfuzz import fuzz
 
 from config import GROQ_API_KEY, STT_MODEL_PRIMARY, STT_MODEL_ESCALATION
 
@@ -8,6 +9,13 @@ NO_SPEECH_MAX = 0.60
 AVG_LOGPROB_MIN = -0.90
 COMPRESSION_MAX = 2.40
 MIN_CONTENT_TOKENS = 5
+
+# docs/TRD.md 4.3 addendum: a fluent Whisper hallucination can score
+# confidently on every metric above (low no_speech_prob, high avg_logprob,
+# normal compression) because none of them measure whether the text is
+# actually GROUNDED in the audio -- only whether the model sounds sure of
+# itself. See transcripts_agree() below.
+MODEL_AGREEMENT_MIN_RATIO = 55
 
 # Whisper's `prompt` biases its decoder toward these tokens without hard-
 # constraining the transcript to them (unlike `language`). Without this,
@@ -127,6 +135,24 @@ def gate_failure_reason(transcript_result: dict) -> str | None:
         return "STT_LOW_CONFIDENCE"
 
     return None
+
+
+def transcripts_agree(text_a: str, text_b: str) -> bool:
+    """Self-consistency check (docs/TRD.md 4.3 addendum): two independent
+    samples of the SAME audio, at the same model/temperature, should land
+    on roughly the same content if there's real speech behind them. A
+    hallucination has no acoustic signal anchoring it, so a resample tends
+    to invent different fabricated text each time -- unlike a genuinely
+    noisy-but-real transcript, which mostly agrees with itself even if a
+    word or two differs.
+
+    token_set_ratio (not plain ratio) is deliberately order/subset-tolerant
+    -- two correct transcriptions of the same speech can differ slightly in
+    filler words or segmentation without that counting as disagreement.
+    MODEL_AGREEMENT_MIN_RATIO=55 is a first real threshold, not a value
+    pulled from the spec (no TRD-given cutoff exists for this); worth
+    revisiting once more real hallucination cases exist to tune against."""
+    return fuzz.token_set_ratio(text_a or "", text_b or "") >= MODEL_AGREEMENT_MIN_RATIO
 
 
 def passes_confidence_gate(transcript_result: dict) -> bool:
