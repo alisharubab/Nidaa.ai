@@ -133,6 +133,35 @@ async def readback_reply(request: Request):
 
 READBACK_MIN_CONFIDENCE = 0.6  # judgment call, see the CORE-22 comment below
 
+# Pillar 4 (multi-turn stitching, docs/TRD.md 4.8): how long a
+# sender's incomplete ticket stays open to a follow-up with no location of
+# its own. 20 minutes was Ali's proposal for the WhatsApp-conversation pace
+# this is meant to cover (a dispatcher-style back-and-forth, not a sender
+# picking the thread back up hours later).
+FOLLOWUP_SESSION_TTL_MINUTES = 20
+
+
+def _drop_filled_missing_fields(old_missing: list[str], record: dict) -> list[str]:
+    """Pillar 4: after folding a follow-up's fields into an open ticket,
+    drop any missing_fields entry it just answered. Only "location" is a
+    literal, prompt-guaranteed token (prompts/system_extract.txt rule 3) --
+    for people_affected/casualties/items the LLM writes free text describing
+    what's missing, so this is a best-effort keyword match, not an exact
+    removal. Worst case a stale entry lingers in missing_fields; it never
+    causes a wrong merge, since merge_into_ticket() itself only ever fills
+    a currently-NULL field or appends a new item."""
+    still_missing = []
+    for field in old_missing:
+        f = field.lower()
+        if record["people_affected"] is not None and ("people" in f or "affected" in f):
+            continue
+        if record["casualties"] is not None and "casualt" in f:
+            continue
+        if record["items"] and "item" in f:
+            continue
+        still_missing.append(field)
+    return still_missing
+
 
 def _format_items_for_readback(items: list[dict]) -> str:
     """"20 khandano ke liye food, water" style summary for the readback
@@ -261,7 +290,43 @@ async def _run_pipeline(message_id: int) -> None:
     t_extracted = _now()
     any_unlocated = False
     with db.get_connection() as conn:
+        # Pillar 4 (docs/TRD.md 4.8): a single-record message that
+        # names no location of its own is a follow-up candidate. Checked
+        # once per message, not per record -- a message with its own
+        # location, or multiple records, is unambiguous enough to stand on
+        # its own and always creates a fresh ticket.
+        merge_target = None
+        if len(extraction["records"]) == 1 and not extraction["records"][0]["location_raw"]:
+            merge_target = db.find_open_ticket_for_sender(conn, sender_hash, FOLLOWUP_SESSION_TTL_MINUTES)
+
         for record in extraction["records"]:
+            if merge_target is not None:
+                final_urgency = blended_urgency(record["urgency"], transcript)
+                db.merge_into_ticket(
+                    conn, merge_target["id"],
+                    people_affected=record["people_affected"],
+                    casualties=record["casualties"],
+                    new_items=record["items"],
+                    urgency=final_urgency,
+                    missing_fields=_drop_filled_missing_fields(
+                        json.loads(merge_target["missing_fields"] or "[]"), record,
+                    ),
+                )
+                updated = db.get_ticket(conn, merge_target["id"])
+                if updated["adm2_name"] is None:
+                    any_unlocated = True
+                elif record["extraction_confidence"] >= READBACK_MIN_CONFIDENCE:
+                    # Re-confirm with the sender now that the ticket changed
+                    # -- same template as first contact (CORE-22), so they
+                    # see their follow-up landed on the right report.
+                    await _fire_reply(sender_hash, "readback", {
+                        "adm2": updated["adm2_name"],
+                        "province": updated["adm1_name"],
+                        "items": _format_items_for_readback(json.loads(updated["items_json"] or "[]")),
+                        "urgency": updated["urgency"],
+                    })
+                continue
+
             # CORE-18: deterministic geocoding. Only this call may populate
             # adm2_name/adm1_name/pcode/latitude/longitude -- never the LLM
             # (hard rule 3, ../CLAUDE.md). "none" leaves them all NULL.
