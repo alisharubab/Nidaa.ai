@@ -1,13 +1,13 @@
 {
-  "run_at": "2026-09-07T21:52:15",
+  "run_at": "2026-09-07T22:25:00",
   "n_total": 10,
   "n_scored": 10,
   "n_skipped": 0,
   "skipped": [],
   "accuracy": {
-    "overall": 0.3,
-    "district": 0.4,
-    "intent": 0.6,
+    "overall": 0.4,
+    "district": 0.5,
+    "intent": 0.7,
     "unintelligible_outcome": null,
     "n": 10,
     "n_extracted": 10,
@@ -20,13 +20,13 @@
     },
     "moderate": {
       "n": 5,
-      "passed": 0
+      "passed": 1
     }
   },
   "ttt_ms": {
-    "median": 10457.9,
-    "p95": 20431.0,
-    "n": 11
+    "median": 5192.2,
+    "p95": 6059.0,
+    "n": 10
   },
   "cases": [
     {
@@ -42,13 +42,13 @@
       "intent_ok": true,
       "pass": true,
       "ttt_ms": [
-        8483.8
+        5694.5
       ],
       "tickets": [
         {
           "district": "Dadu",
           "intent": "resource_request",
-          "urgency": "critical",
+          "urgency": "high",
           "pcode": "PK703"
         }
       ]
@@ -66,7 +66,7 @@
       "intent_ok": true,
       "pass": false,
       "ttt_ms": [
-        12061.3
+        5729.2
       ],
       "tickets": [
         {
@@ -90,13 +90,13 @@
       "intent_ok": true,
       "pass": true,
       "ttt_ms": [
-        10457.9
+        5250.3
       ],
       "tickets": [
         {
           "district": "Sukkur",
           "intent": "resource_request",
-          "urgency": "critical",
+          "urgency": "high",
           "pcode": "PK723"
         }
       ]
@@ -114,7 +114,7 @@
       "intent_ok": true,
       "pass": false,
       "ttt_ms": [
-        6166.7
+        5301.9
       ],
       "tickets": [
         {
@@ -138,7 +138,7 @@
       "intent_ok": true,
       "pass": true,
       "ttt_ms": [
-        4636.4
+        5134.1
       ],
       "tickets": [
         {
@@ -162,7 +162,7 @@
       "intent_ok": true,
       "pass": false,
       "ttt_ms": [
-        14118.8
+        6059.0
       ],
       "tickets": [
         {
@@ -186,7 +186,7 @@
       "intent_ok": false,
       "pass": false,
       "ttt_ms": [
-        20431.0
+        4825.0
       ],
       "tickets": [
         {
@@ -206,25 +206,18 @@
       "error_code": null,
       "skipped": false,
       "skip_reason": null,
-      "district_ok": false,
-      "intent_ok": false,
-      "pass": false,
+      "district_ok": true,
+      "intent_ok": true,
+      "pass": true,
       "ttt_ms": [
-        17071.2,
-        19571.2
+        4812.7
       ],
       "tickets": [
         {
           "district": "Multan",
           "intent": "resource_request",
-          "urgency": "high",
-          "pcode": "PK622"
-        },
-        {
-          "district": null,
-          "intent": "incident_report",
           "urgency": "critical",
-          "pcode": null
+          "pcode": "PK622"
         }
       ]
     },
@@ -241,7 +234,7 @@
       "intent_ok": false,
       "pass": false,
       "ttt_ms": [
-        6638.9
+        5060.2
       ],
       "tickets": [
         {
@@ -265,13 +258,13 @@
       "intent_ok": false,
       "pass": false,
       "ttt_ms": [
-        9453.3
+        4686.6
       ],
       "tickets": [
         {
           "district": null,
           "intent": "incident_report",
-          "urgency": "high",
+          "urgency": "critical",
           "pcode": null
         }
       ]
